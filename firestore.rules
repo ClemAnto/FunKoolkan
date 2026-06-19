@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// FunWarriors leaderboard — anti-cheat v1 (rules-only).
+// Apply in Firebase console → Firestore Database → Rules, or `firebase deploy --only firestore:rules`.
+//
+// SINGLE-DOCUMENT model: the whole board is one doc (leaderboard/top) holding an
+// `entries` array, rewritten on every submit (sorted desc, capped at TOP_N). This
+// keeps the collection self-pruning. Firestore rules can't iterate an array, so they
+// only enforce SHAPE at the doc level: a single `entries` list, length ≤ TOP_N. Reads
+// are public. Per-entry validation and createdAt are client-trusted (accepted for v1;
+// App Check is the planned hardening step). Deletes are forbidden.
+//
+// Keep in sync with assets/scripts/config/LeaderboardConfig.ts:
+//   TOP_N = 10   →  the size() <= 10 below
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /leaderboard/{doc} {
+      allow read: if true;
+
+      allow create, update: if
+        request.resource.data.keys().hasOnly(['entries'])
+        && request.resource.data.entries is list
+        && request.resource.data.entries.size() <= 10;
+
+      allow delete: if false;
+    }
+  }
+}

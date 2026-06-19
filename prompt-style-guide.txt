@@ -1,0 +1,144 @@
+FUNWARRIORS — GUIDA AI PROMPT PER ASSET GRAFICI
+================================================
+Da appendere o adattare per ogni generazione AI (Midjourney, Ideogram, DALL-E, ecc.)
+
+
+== BLOCCO STILE BASE (aggiungere a OGNI prompt) ==
+
+kawaii chibi cartoon style, thick black outlines, highly saturated colors,
+flat shading with simple highlights, friendly and festive medieval tournament theme,
+2D game asset, white background, no shadows on background
+
+
+== PERSONAGGI — struttura prompt ==
+
+Formato base:
+  [descrizione personaggio], chibi kawaii cartoon warrior, thick black outline,
+  standing on a round wooden pedestal with level number "[N]",
+  highly saturated colors, flat shading with soft highlights,
+  cute chubby proportions, big head, expressive face, friendly expression,
+  2D game sprite, white background, no drop shadow, centered composition
+
+--- LIVELLO 1 — CUCCIOLO (nessun equipaggiamento) ---
+
+Rana Cucciolo:
+  cute chibi frog warrior cub, bright green color, big round eyes, tiny arms,
+  no weapons or armor, cheerful expression,
+  standing on a round wooden pedestal with number "1",
+  kawaii cartoon style, thick black outline, flat shading, white background
+
+Gatto Cucciolo:
+  cute chibi cat warrior cub, orange tabby fur, big round eyes, tiny paws,
+  no weapons or armor, cheerful expression,
+  standing on a round wooden pedestal with number "1",
+  kawaii cartoon style, thick black outline, flat shading, white background
+
+Gallina Cucciolo:
+  cute chibi chicken warrior cub, white feathers, small red comb, big round eyes,
+  no weapons or armor, cheerful expression,
+  standing on a round wooden pedestal with number "1",
+  kawaii cartoon style, thick black outline, flat shading, white background
+
+Lupo Cucciolo:
+  cute chibi wolf warrior cub, dark grey fur, big round eyes, tiny snout,
+  no weapons or armor, cheerful expression,
+  standing on a round wooden pedestal with number "1",
+  kawaii cartoon style, thick black outline, flat shading, white background
+
+Aquila Cucciolo:
+  cute chibi eagle warrior cub, brown feathers, big round eyes, small beak,
+  no weapons or armor, cheerful expression,
+  standing on a round wooden pedestal with number "1",
+  kawaii cartoon style, thick black outline, flat shading, white background
+
+Leone Cucciolo:
+  cute chibi lion warrior cub, golden fur, small mane, big round eyes,
+  no weapons or armor, cheerful expression,
+  standing on a round wooden pedestal with number "1",
+  kawaii cartoon style, thick black outline, flat shading, white background
+
+Drago Cucciolo:
+  cute chibi dragon warrior cub, purple scales, tiny wings, big round eyes,
+  no weapons or armor, cheerful expression,
+  standing on a round wooden pedestal with number "1",
+  kawaii cartoon style, thick black outline, flat shading, white background
+
+--- LIVELLO 2 — APPRENDISTA (arma e scudo di legno) ---
+
+[stessa struttura — aggiungere:]
+  holding a small wooden sword in one hand and a round wooden shield in the other,
+  beginner apprentice equipment, wooden gear,
+  standing on a round wooden pedestal with number "2"
+
+--- LIVELLO 3 — SOLDATO (arma vera, piccola) ---
+
+[stessa struttura — aggiungere:]
+  wearing a simple metal helmet, holding a small real weapon [vedi tabella specie],
+  soldier outfit, light armor,
+  standing on a round wooden pedestal with number "3"
+
+--- LIVELLO 4 — GUERRIERO (elmetto + arma imponente) ---
+
+[stessa struttura — aggiungere:]
+  wearing an ornate helmet, holding an impressive [arma specie], confident pose,
+  warrior armor with decorative details, battle-ready expression,
+  standing on a round wooden pedestal with number "4"
+
+--- LIVELLO 5 — CAMPIONE (elmetto + stivali + arma rara) ---
+
+[stessa struttura — aggiungere:]
+  wearing a magnificent helmet and armored boots, holding a rare powerful [arma specie],
+  glowing aura, champion-tier equipment, heroic pose,
+  standing on a round wooden pedestal with number "5"
+
+--- Armi per specie ---
+  Rana:    dagger / pugnale
+  Gatto:   sword / spada
+  Gallina: spear / lancia
+  Lupo:    axe / ascia
+  Aquila:  bow and arrow / arco
+  Leone:   mace / mazza
+  Drago:   fire scepter / scettro di fuoco
+
+
+== BACKGROUND ==
+
+medieval tournament celebration background, 2D cartoon game background,
+large stone castle with towers and battlements in the center background,
+colorful triangular bunting flags strung across the scene,
+heraldic banners with animal symbols hanging from towers,
+wooden market stalls with striped awnings on the sides,
+small stylized crowd of spectators watching from the edges,
+bright blue sky, green hills, leafy trees on the sides,
+highly saturated warm colors (reds, yellows, greens), friendly festive atmosphere,
+no characters in foreground, no text, landscape orientation,
+painterly cartoon illustration style, clean composition
+
+
+== PISTA (TRACK) ==
+
+top-down angled view of a medieval curling/bowling track,
+smooth white ice-like surface inside,
+wooden plank walls on the sides (brown wood texture, visible planks),
+slight perspective showing depth (20-30 degree angle from top),
+clean simple design, no decorations on the surface,
+2D cartoon game asset style, thick outlines,
+highly saturated warm brown wood tones contrasting with white ice surface,
+no characters, no text, portrait orientation (taller than wide)
+
+Nastro rosso separato:
+  horizontal red satin ribbon or red tape stretched across a track,
+  festive tournament style, slight 3D depth, thick visible ribbon,
+  cartoon style, thick black outline, isolated on transparent background
+
+
+== NOTE D'USO ==
+
+- Usare sempre "white background" per sprite personaggi (per ritaglio facile)
+- Per il background usare "no characters in foreground" per evitare elementi indesiderati
+- Se l'AI aggiunge testo indesiderato: aggiungere "no text, no letters, no numbers" al prompt
+- Per coerenza di stile tra sessioni diverse: iniziare sempre con lo stesso seed/stile di riferimento
+- Dopo il primo set approvato (Rana lv1-4): usare quell'immagine come "image prompt" o reference
+  per mantenere lo stile coerente sulle specie successive
+- Risoluzione target export: 256x256px (retina), poi ridimensionare a 128x128 per base
+- Formato: PNG con sfondo trasparente (ritagliare dopo generazione)

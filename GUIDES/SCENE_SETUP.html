@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FunWarriors — Scene Setup Guide</title>
+<style>
+  :root {
+    --bg:       #12121e;
+    --surface:  #1e1e30;
+    --border:   #2e2e48;
+    --accent:   #5b8cff;
+    --yellow:   #ffd84d;
+    --green:    #64d87c;
+    --red:      #e85050;
+    --purple:   #b07aff;
+    --orange:   #ff9f7e;
+    --teal:     #7ecfff;
+    --text:     #dde1f0;
+    --muted:    #7e8299;
+    --code-bg:  #0e0e1c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    padding: 40px 24px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  h1 { font-size: 28px; color: var(--yellow); margin-bottom: 6px; letter-spacing: 0.5px; }
+  h2 { font-size: 20px; color: var(--accent); margin: 44px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  h3 { font-size: 16px; color: var(--green); margin: 28px 0 10px; }
+  h4 { font-size: 13px; color: var(--purple); margin: 20px 0 8px; text-transform: uppercase; letter-spacing: 0.6px; }
+  p  { color: var(--text); margin-bottom: 10px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 32px; }
+
+  /* ── Tree ── */
+  .tree {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 2;
+  }
+  .nc  { color: var(--muted); }
+  .nca { color: var(--yellow); font-weight: bold; }
+  .nbg { color: var(--teal); }
+  .ntr { color: var(--green); font-weight: bold; }
+  .ngo { color: var(--red); }
+  .nla { color: var(--orange); }
+  .ngl { color: var(--purple); }
+  .nui { color: #ff9f7e; }
+  .nhd { color: #e0c0ff; }
+  .ngm { color: var(--yellow); }
+  .nrt { color: var(--muted); font-style: italic; }
+  .tag {
+    font-size: 11px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 7px;
+    margin-left: 8px;
+    vertical-align: middle;
+    color: var(--muted);
+    font-style: normal;
+    font-weight: normal;
+  }
+
+  /* ── Steps ── */
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px 24px;
+    margin: 16px 0;
+    position: relative;
+  }
+  .step-number {
+    position: absolute;
+    top: -14px; left: 20px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 12px; font-weight: bold;
+    padding: 2px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+  }
+  .step-number.track  { background: var(--green); color: #000; }
+  .step-number.ui     { background: var(--orange); color: #000; }
+  .step-number.hud    { background: var(--purple); }
+  .step h3 { margin-top: 6px; }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13.5px; }
+  th {
+    background: var(--border); color: var(--muted);
+    text-align: left; padding: 7px 12px;
+    font-weight: 600; font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  td { padding: 7px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td:first-child  { font-family: monospace; font-size: 13px; width: 36%; color: var(--text); }
+  td:nth-child(2) { font-family: monospace; font-size: 13px; width: 26%; color: var(--yellow); }
+  td:last-child   { font-size: 13px; width: 38%; color: var(--muted); }
+
+  .ref-table td:nth-child(2) { color: var(--yellow); }
+  .ref-table td:nth-child(3) { color: var(--muted); }
+
+  /* ── Code ── */
+  code {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12.5px; color: var(--green);
+  }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px 20px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 13px; line-height: 1.7;
+    overflow-x: auto; margin: 10px 0; color: #c9d1e0;
+  }
+  pre .cm  { color: var(--muted); }
+  pre .kw  { color: var(--purple); }
+  pre .str { color: var(--green); }
+
+  /* ── Callouts ── */
+  .callout {
+    border-left: 3px solid; padding: 10px 16px;
+    border-radius: 0 6px 6px 0; margin: 14px 0;
+    font-size: 14px;
+  }
+  .callout.warn  { border-color: var(--yellow); background: #1e1a00; color: #e8d170; }
+  .callout.info  { border-color: var(--accent);  background: #0e1828; color: #9ab8ff; }
+  .callout.ok    { border-color: var(--green);   background: #0a1e0f; color: #80e898; }
+  .callout.red   { border-color: var(--red);     background: #1e0808; color: #f09090; }
+  .callout strong { font-weight: 700; margin-right: 6px; }
+
+  /* ── Z-order ── */
+  .zstack { display: flex; flex-direction: column-reverse; gap: 6px; margin: 12px 0; }
+  .zlayer {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 16px; font-size: 13px;
+  }
+  .zlayer .idx  { color: var(--muted); font-family: monospace; min-width: 20px; }
+  .zlayer .name { flex: 1; font-family: monospace; }
+  .zlayer .desc { color: var(--muted); font-size: 12px; }
+
+  /* ── Section divider ── */
+  .section-label {
+    font-size: 11px; font-weight: bold; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--muted);
+    margin: 36px 0 8px; display: flex; align-items: center; gap: 10px;
+  }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+
+  /* ── HUD layout diagram ── */
+  .hud-diagram {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12.5px; line-height: 1.5;
+    position: relative; aspect-ratio: 9/16; max-width: 320px;
+    margin: 0 auto;
+  }
+  .hud-box {
+    position: absolute;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    text-align: center;
+  }
+  .hud-top-l  { top:4%; left:4%;  background:#1a2a1a; border-color:var(--green);  color:var(--green);  }
+  .hud-top-r  { top:4%; right:4%; background:#1a1a2a; border-color:var(--accent); color:var(--accent); }
+  .hud-top-r2 { top:4%; right:22%;background:#1a1a2a; border-color:var(--purple);color:var(--purple); }
+  .hud-top-c  { top:4%; left:50%; transform:translateX(-50%); background:#111; border-color:var(--muted); color:var(--muted); }
+  .hud-mid    { top:50%; left:50%;transform:translate(-50%,-50%); background:#1a0a0a; border-color:var(--red); color:var(--red); }
+  .hud-bot-l  { bottom:4%; left:4%;  background:#1a1a2a; border-color:var(--teal); color:var(--teal); }
+  .hud-bot-r  { bottom:4%; right:4%; background:#111; border-color:var(--muted); color:var(--muted); }
+  .hud-track  { top:10%; left:12%; right:12%; bottom:10%;
+                border:1px dashed #3a3a5a; border-radius:4px; color:#3a3a5a;
+                display:flex; align-items:center; justify-content:center; font-size:10px; }
+</style>
+</head>
+<body>
+
+<h1>FunWarriors — Scene Setup Guide</h1>
+<p class="subtitle">Cocos Creator 3.8.8 · Design resolution 720 × 1280 · FIXED_HEIGHT<br>
+La scena nell'editor deve mostrare esattamente il layout finale del gioco.</p>
+
+
+<!-- ═══════════════════════════════════════════════ GERARCHIA -->
+<h2>1. Gerarchia completa dei nodi</h2>
+
+<div class="tree">
+<span class="nc">Scene</span><br>
+└── <span class="nca">Canvas</span> <span class="tag">Canvas + UITransform + Widget</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nc">Camera</span> <span class="tag">Camera 2D ortografica</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nbg">BgLayer</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="nbg">BgSprite</span> <span class="tag">Sprite + UITransform + Widget fullscreen</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="ntr">Track</span> <span class="tag">Track.ts + Graphics</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="ntr">TrackSprite</span> <span class="tag">Sprite + UITransform</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="ngo">GameOverLine</span> <span class="tag">Graphics (linea rossa)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="nla">LauncherAnchor</span> <span class="tag">nodo anchor spawn</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="ngl">GameLayer</span> <span class="tag">nodo vuoto — warriors a runtime</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;<span class="nrt">└── (warriors spawned a runtime)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nui">UILayer</span> <span class="tag">UITransform + Widget fullscreen</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="nhd">HUD</span> <span class="tag">UITransform + Widget fullscreen</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nhd">ScoreSec</span> <span class="tag">Widget top-left</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nc">ScoreCaption</span> <span class="tag">Label "SCORE"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="nc">ScoreValue</span> <span class="tag">Label "0"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nhd">RoundSec</span> <span class="tag">Widget top-right</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nc">RoundCaption</span> <span class="tag">Label "ROUND"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="nc">RoundValue</span> <span class="tag">Label "1"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nhd">MergesSec</span> <span class="tag">Widget top-right (accanto a Round)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nc">MergesCaption</span> <span class="tag">Label "MERGES"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="nc">MergesValue</span> <span class="tag">Label "0"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nhd">NextSec</span> <span class="tag">Widget bottom-left</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nc">NextCaption</span> <span class="tag">Label "NEXT"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="nc">NextPreview</span> <span class="tag">Sprite + UITransform</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nhd">TimerSec</span> <span class="tag">posizione gestita da codice</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="nc">TimerValue</span> <span class="tag">Label "15"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="nhd">VersionSec</span> <span class="tag">Widget top-center</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="nc">VersionLabel</span> <span class="tag">Label "v0.1.x"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="nhd">FullscreenBtn</span> <span class="tag">Widget bottom-right + Graphics</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="ngm">GameManager</span> <span class="tag">GameManager.ts</span>
+</div>
+
+<h3>Z-order dei layer (dal basso verso l'alto)</h3>
+<div class="zstack">
+  <div class="zlayer"><span class="idx">0</span><span class="name nbg">BgLayer</span><span class="desc">sfondo statico</span></div>
+  <div class="zlayer"><span class="idx">1</span><span class="name ntr">Track</span><span class="desc">pista + muri fisici + linea game-over</span></div>
+  <div class="zlayer"><span class="idx">2</span><span class="name ngl">GameLayer</span><span class="desc">warriors</span></div>
+  <div class="zlayer"><span class="idx">3</span><span class="name nui">UILayer → HUD</span><span class="desc">score, round, timer, next, ecc.</span></div>
+</div>
+
+<h3>Layout HUD (riferimento visivo)</h3>
+<div class="hud-diagram">
+  <div class="hud-track">Track / TrackSprite</div>
+  <div class="hud-box hud-top-l">SCORE<br><strong>0</strong></div>
+  <div class="hud-box hud-top-r">ROUND<br><strong>1</strong></div>
+  <div class="hud-box hud-top-r2">MERGES<br><strong>0</strong></div>
+  <div class="hud-box hud-top-c">v0.1.x</div>
+  <div class="hud-box hud-mid">TIMER</div>
+  <div class="hud-box hud-bot-l">NEXT<br>[ ]</div>
+  <div class="hud-box hud-bot-r">⛶</div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════ STEP 1-2 -->
+<h2>2. Configurazione passo per passo</h2>
+
+<div class="section-label">Canvas e Camera</div>
+
+<div class="step">
+  <div class="step-number">STEP 1</div>
+  <h3>Canvas</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Canvas → DesignResolution</td><td>720 × 1280</td><td></td></tr>
+    <tr><td>Canvas → Fit Height</td><td>✓</td><td>= FIXED_HEIGHT nel codice</td></tr>
+    <tr><td>Canvas → Fit Width</td><td>✗</td><td></td></tr>
+    <tr><td>Widget → AlignMode</td><td>ALWAYS</td><td></td></tr>
+  </table>
+</div>
+
+<div class="step">
+  <div class="step-number">STEP 2</div>
+  <h3>Camera</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Camera → Projection</td><td>ORTHO</td><td></td></tr>
+    <tr><td>Camera → Clear Color</td><td>(18, 18, 32, 255)</td><td>evita flash bianchi al load</td></tr>
+    <tr><td>Camera → Visibility</td><td>UI_2D</td><td>default CC</td></tr>
+  </table>
+</div>
+
+<div class="section-label">Background</div>
+
+<div class="step">
+  <div class="step-number">STEP 3</div>
+  <h3>BgLayer / BgSprite</h3>
+
+  <h4>BgLayer</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, 0, 0)</td><td></td></tr>
+    <tr><td>UITransform → ContentSize</td><td>720 × 1280</td><td></td></tr>
+    <tr><td>Widget → tutti e 4 i bordi</td><td>= 0</td><td>stretch fullscreen</td></tr>
+    <tr><td>Widget → AlignMode</td><td>ALWAYS</td><td></td></tr>
+  </table>
+
+  <h4>BgSprite</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, 0, 0)</td><td></td></tr>
+    <tr><td>Sprite → SizeMode</td><td>CUSTOM</td><td>⚠ imposta PRIMA dello SpriteFrame</td></tr>
+    <tr><td>UITransform → ContentSize</td><td>720 × 1280</td><td></td></tr>
+    <tr><td>Sprite → Type</td><td>SIMPLE</td><td>o SLICED se hai 9-slice</td></tr>
+    <tr><td>Sprite → SpriteFrame</td><td>[immagine background]</td><td></td></tr>
+    <tr><td>Widget → tutti e 4 i bordi</td><td>= 0</td><td></td></tr>
+  </table>
+</div>
+
+<div class="section-label">Pista e fisica</div>
+
+<div class="step">
+  <div class="step-number track">STEP 4</div>
+  <h3>Track — nodo pista</h3>
+
+  <h4>Track (nodo root)</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, 0, 0)</td><td>geometria in world space</td></tr>
+    <tr><td>Track.ts → funnelPercentage</td><td>25</td><td>slider 0–50 nell'Inspector</td></tr>
+  </table>
+
+  <h4>TrackSprite (figlio di Track)</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, −160, 0)</td><td>TRACK_BOTTOM_Y + TRACK_H/2 a design res</td></tr>
+    <tr><td>Sprite → SizeMode</td><td>CUSTOM</td><td>⚠ prima dello SpriteFrame</td></tr>
+    <tr><td>UITransform → ContentSize</td><td>576 × 960</td><td>TRACK_W × TRACK_H a 720×1280</td></tr>
+    <tr><td>Sprite → Type</td><td>SIMPLE</td><td></td></tr>
+    <tr><td>Sprite → SpriteFrame</td><td>[immagine pista]</td><td>PNG trapezio + alpha outside</td></tr>
+    <tr><td>Widget</td><td>— nessuno —</td><td>codice aggiorna pos/size a runtime</td></tr>
+  </table>
+
+  <h4>GameOverLine (figlio di Track)</h4>
+  <p>Nodo visivo che definisce la linea di game-over. Il codice legge la sua <code>position.y</code> invece di calcolare il midpoint.</p>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>GameOverLine</td><td>esatto — cercato per nome</td></tr>
+    <tr><td>Position</td><td>(0, −160, 0)</td><td>= (TRACK_BOTTOM_Y + TRACK_TOP_Y) / 2 a design res</td></tr>
+    <tr><td>Graphics → lineWidth</td><td>4</td><td>linea orizzontale rossa visibile nell'editor</td></tr>
+    <tr><td>Graphics → strokeColor</td><td>(220, 40, 40, 255)</td><td>disegnata dal codice in drawTrack()</td></tr>
+    <tr><td>Widget</td><td>— nessuno —</td><td>codice riposiziona su resize</td></tr>
+  </table>
+  <div class="callout info">
+    <strong>Modifica codice:</strong> <code>GAME_OVER_LINE_Y</code> non viene più calcolato come midpoint — viene letto da <code>GameOverLine.position.y</code> dopo che <code>initLayout()</code> lo ha riposizionato proporzionalmente.
+  </div>
+
+  <h4>LauncherAnchor (figlio di Track)</h4>
+  <p>Punto di spawn dei warriors. <code>SpawnManager</code> e <code>InputController</code> leggono la sua posizione world.</p>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>LauncherAnchor</td><td>esatto</td></tr>
+    <tr><td>Position</td><td>(0, 320, 0)</td><td>= TRACK_TOP_Y a design res</td></tr>
+    <tr><td>Componenti</td><td>— nessuno —</td><td>solo transform, non visibile a runtime</td></tr>
+    <tr><td>Widget</td><td>— nessuno —</td><td>codice riposiziona su resize</td></tr>
+  </table>
+</div>
+
+<div class="section-label">Layer gameplay e UI</div>
+
+<div class="step">
+  <div class="step-number">STEP 5</div>
+  <h3>GameLayer</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>GameLayer</td><td>esatto — GameManager.ts usa getChildByName</td></tr>
+    <tr><td>Position</td><td>(0, 0, 0)</td><td></td></tr>
+    <tr><td>Componenti</td><td>— nessuno —</td><td></td></tr>
+  </table>
+</div>
+
+<div class="step">
+  <div class="step-number">STEP 6</div>
+  <h3>UILayer</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>UILayer</td><td>esatto</td></tr>
+    <tr><td>UITransform → ContentSize</td><td>720 × 1280</td><td></td></tr>
+    <tr><td>Widget → tutti e 4 i bordi</td><td>= 0</td><td>stretch fullscreen</td></tr>
+    <tr><td>Widget → AlignMode</td><td>ALWAYS</td><td></td></tr>
+  </table>
+</div>
+
+<div class="section-label">HUD — elementi GUI</div>
+
+<div class="step">
+  <div class="step-number hud">STEP 7</div>
+  <h3>HUD (figlio di UILayer)</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>HUD</td><td></td></tr>
+    <tr><td>UITransform → ContentSize</td><td>720 × 1280</td><td></td></tr>
+    <tr><td>Widget → tutti e 4 i bordi</td><td>= 0</td><td>stretch sull'UILayer</td></tr>
+    <tr><td>Widget → AlignMode</td><td>ALWAYS</td><td></td></tr>
+  </table>
+</div>
+
+<div class="step">
+  <div class="step-number hud">STEP 8</div>
+  <h3>ScoreSec — punteggio (top-left)</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>ScoreSec</td><td></td></tr>
+    <tr><td>UITransform → ContentSize</td><td>120 × 80</td><td>area cliccabile nell'editor</td></tr>
+    <tr><td>Widget → IsAlignLeft</td><td>✓ · Left = 80</td><td rowspan="2">margini MH=80, MV=40</td></tr>
+    <tr><td>Widget → IsAlignTop</td><td>✓ · Top = 40</td></tr>
+    <tr><td>Widget → AlignMode</td><td>ALWAYS</td><td></td></tr>
+  </table>
+  <h4>ScoreCaption</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, −12, 0)</td><td>offset locale dal pivot del parent</td></tr>
+    <tr><td>Label → String</td><td>SCORE</td><td></td></tr>
+    <tr><td>Label → FontSize</td><td>14</td><td></td></tr>
+    <tr><td>Label → Color</td><td>(180, 180, 180, 255)</td><td>grigio chiaro</td></tr>
+  </table>
+  <h4>ScoreValue</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, −56, 0)</td><td></td></tr>
+    <tr><td>Label → String</td><td>0</td><td>aggiornato a runtime</td></tr>
+    <tr><td>Label → FontSize</td><td>46</td><td></td></tr>
+    <tr><td>Label → IsBold</td><td>✓</td><td></td></tr>
+    <tr><td>Label → Color</td><td>(255, 220, 50, 255)</td><td>giallo</td></tr>
+  </table>
+</div>
+
+<div class="step">
+  <div class="step-number hud">STEP 9</div>
+  <h3>RoundSec — round corrente (top-right)</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>RoundSec</td><td></td></tr>
+    <tr><td>UITransform → ContentSize</td><td>120 × 80</td><td></td></tr>
+    <tr><td>Widget → IsAlignRight</td><td>✓ · Right = 80</td><td rowspan="2"></td></tr>
+    <tr><td>Widget → IsAlignTop</td><td>✓ · Top = 40</td></tr>
+    <tr><td>Widget → AlignMode</td><td>ALWAYS</td><td></td></tr>
+  </table>
+  <h4>RoundCaption</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, −12, 0)</td><td></td></tr>
+    <tr><td>Label → String</td><td>ROUND</td><td></td></tr>
+    <tr><td>Label → FontSize</td><td>14</td><td></td></tr>
+    <tr><td>Label → Color</td><td>(180, 180, 180, 255)</td><td></td></tr>
+  </table>
+  <h4>RoundValue</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, −56, 0)</td><td></td></tr>
+    <tr><td>Label → String</td><td>1</td><td></td></tr>
+    <tr><td>Label → FontSize</td><td>46</td><td></td></tr>
+    <tr><td>Label → IsBold</td><td>✓</td><td></td></tr>
+    <tr><td>Label → Color</td><td>(100, 200, 255, 255)</td><td>azzurro</td></tr>
+  </table>
+</div>
+
+<div class="step">
+  <div class="step-number hud">STEP 10</div>
+  <h3>MergesSec — contatore merge (top-right, accanto a Round)</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>MergesSec</td><td></td></tr>
+    <tr><td>UITransform → ContentSize</td><td>100 × 80</td><td></td></tr>
+    <tr><td>Widget → IsAlignRight</td><td>✓ · Right = 190</td><td>80 (margine) + 110 (larghezza RoundSec)</td></tr>
+    <tr><td>Widget → IsAlignTop</td><td>✓ · Top = 40</td><td></td></tr>
+    <tr><td>Widget → AlignMode</td><td>ALWAYS</td><td></td></tr>
+  </table>
+  <h4>MergesCaption</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, −12, 0)</td><td></td></tr>
+    <tr><td>Label → String</td><td>MERGES</td><td></td></tr>
+    <tr><td>Label → FontSize</td><td>13</td><td></td></tr>
+    <tr><td>Label → Color</td><td>(150, 150, 150, 255)</td><td></td></tr>
+  </table>
+  <h4>MergesValue</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, −56, 0)</td><td></td></tr>
+    <tr><td>Label → String</td><td>0</td><td></td></tr>
+    <tr><td>Label → FontSize</td><td>32</td><td></td></tr>
+    <tr><td>Label → IsBold</td><td>✓</td><td></td></tr>
+    <tr><td>Label → Color</td><td>(120, 220, 140, 255)</td><td>verde</td></tr>
+  </table>
+</div>
+
+<div class="step">
+  <div class="step-number hud">STEP 11</div>
+  <h3>NextSec — preview prossimo warrior (bottom-left)</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>NextSec</td><td></td></tr>
+    <tr><td>UITransform → ContentSize</td><td>120 × 120</td><td></td></tr>
+    <tr><td>Widget → IsAlignLeft</td><td>✓ · Left = 80</td><td rowspan="2"></td></tr>
+    <tr><td>Widget → IsAlignBottom</td><td>✓ · Bottom = 40</td></tr>
+    <tr><td>Widget → AlignMode</td><td>ALWAYS</td><td></td></tr>
+  </table>
+  <h4>NextCaption</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, 88, 0)</td><td>sopra il preview</td></tr>
+    <tr><td>Label → String</td><td>NEXT</td><td></td></tr>
+    <tr><td>Label → FontSize</td><td>13</td><td></td></tr>
+    <tr><td>Label → Color</td><td>(180, 180, 180, 255)</td><td></td></tr>
+  </table>
+  <h4>NextPreview</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, 44, 0)</td><td></td></tr>
+    <tr><td>UITransform → ContentSize</td><td>80 × 80</td><td>placeholder — ridimensionato a runtime</td></tr>
+    <tr><td>Sprite → SizeMode</td><td>CUSTOM</td><td></td></tr>
+  </table>
+</div>
+
+<div class="step">
+  <div class="step-number hud">STEP 12</div>
+  <h3>TimerSec — conto alla rovescia (centro, zona lancio)</h3>
+  <p>La posizione Y è legata a <code>GameOverLine</code> — non usa Widget, viene aggiornata dal codice su resize.</p>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>TimerSec</td><td></td></tr>
+    <tr><td>Position</td><td>(0, −544, 0)</td><td>TRACK_BOTTOM_Y + (GAME_OVER_LINE_Y − TRACK_BOTTOM_Y) × 0.2</td></tr>
+    <tr><td>Widget</td><td>— nessuno —</td><td>codice aggiorna Y su resize</td></tr>
+  </table>
+  <h4>TimerValue</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, 0, 0)</td><td></td></tr>
+    <tr><td>Label → String</td><td>15</td><td>aggiornato a runtime</td></tr>
+    <tr><td>Label → FontSize</td><td>44</td><td></td></tr>
+    <tr><td>Label → IsBold</td><td>✓</td><td></td></tr>
+    <tr><td>Label → Color</td><td>(200, 200, 200, 200)</td><td>grigio semitrasparente</td></tr>
+  </table>
+</div>
+
+<div class="step">
+  <div class="step-number hud">STEP 13</div>
+  <h3>VersionSec — versione (top-center)</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>VersionSec</td><td></td></tr>
+    <tr><td>UITransform → ContentSize</td><td>120 × 40</td><td></td></tr>
+    <tr><td>Widget → IsAlignTop</td><td>✓ · Top = 40</td><td></td></tr>
+    <tr><td>Widget → IsAlignHorizontalCenter</td><td>✓ · HCenter = 0</td><td>centrato orizzontalmente</td></tr>
+    <tr><td>Widget → AlignMode</td><td>ALWAYS</td><td></td></tr>
+  </table>
+  <h4>VersionLabel</h4>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Position</td><td>(0, 0, 0)</td><td></td></tr>
+    <tr><td>Label → String</td><td>v0.1.x</td><td>aggiornato a runtime con VERSION</td></tr>
+    <tr><td>Label → FontSize</td><td>18</td><td></td></tr>
+    <tr><td>Label → Color</td><td>(120, 120, 120, 140)</td><td>grigio molto attenuato</td></tr>
+  </table>
+</div>
+
+<div class="step">
+  <div class="step-number hud">STEP 14</div>
+  <h3>FullscreenBtn — pulsante fullscreen (bottom-right)</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>FullscreenBtn</td><td></td></tr>
+    <tr><td>UITransform → ContentSize</td><td>44 × 44</td><td></td></tr>
+    <tr><td>Widget → IsAlignRight</td><td>✓ · Right = 80</td><td rowspan="2"></td></tr>
+    <tr><td>Widget → IsAlignBottom</td><td>✓ · Bottom = 40</td></tr>
+    <tr><td>Widget → AlignMode</td><td>ALWAYS</td><td></td></tr>
+    <tr><td>Graphics</td><td>icona fullscreen</td><td>4 bracket angolari — disegnati dal codice</td></tr>
+  </table>
+</div>
+
+<div class="step">
+  <div class="step-number">STEP 15</div>
+  <h3>GameManager</h3>
+  <table>
+    <tr><th>Proprietà</th><th>Valore</th><th>Note</th></tr>
+    <tr><td>Name</td><td>GameManager</td><td></td></tr>
+    <tr><td>Position</td><td>(0, 0, 0)</td><td></td></tr>
+    <tr><td>GameManager.ts</td><td>agganciato</td><td>trova i nodi pre-esistenti per nome</td></tr>
+  </table>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════ CODICE -->
+<h2>3. Modifiche al codice necessarie</h2>
+
+<div class="callout red">
+  <strong>Importante:</strong> GameManager.ts crea attualmente GameLayer, UILayer e tutti i nodi HUD via codice. Con la scena pre-strutturata deve <em>trovare</em> i nodi esistenti invece di crearne di nuovi.
+</div>
+
+<h3>GameLayer e UILayer — trova invece di creare</h3>
+<pre><span class="cm">// GameManager.start() — sostituisci le righe di new Node()</span>
+<span class="kw">this</span>.gameLayer = <span class="kw">this</span>.node.parent!.getChildByName(<span class="str">'GameLayer'</span>)
+  ?? (() => { <span class="kw">const</span> n = <span class="kw">new</span> Node(<span class="str">'GameLayer'</span>); n.setParent(<span class="kw">this</span>.node.parent!); <span class="kw">return</span> n; })();
+
+<span class="kw">this</span>.uiLayer = <span class="kw">this</span>.node.parent!.getChildByName(<span class="str">'UILayer'</span>)
+  ?? (() => { <span class="kw">const</span> n = <span class="kw">new</span> Node(<span class="str">'UILayer'</span>); n.setParent(<span class="kw">this</span>.node.parent!); <span class="kw">return</span> n; })();</pre>
+
+<h3>createHud() — legge nodi pre-esistenti</h3>
+<pre><span class="cm">// Trova HUD pre-esistente (già in scena) o lo crea come fallback</span>
+<span class="kw">const</span> hud = <span class="kw">this</span>.uiLayer.getChildByName(<span class="str">'HUD'</span>) ?? <span class="kw">new</span> Node(<span class="str">'HUD'</span>);
+<span class="kw">if</span> (!hud.parent) hud.setParent(<span class="kw">this</span>.uiLayer);
+
+<span class="cm">// Legge i Label pre-esistenti invece di crearli</span>
+<span class="kw">this</span>.scoreLabel = hud.getChildByName(<span class="str">'ScoreSec'</span>)
+  ?.getChildByName(<span class="str">'ScoreValue'</span>)?.getComponent(Label) ?? <span class="kw">null</span>;
+<span class="kw">this</span>.roundLabel = hud.getChildByName(<span class="str">'RoundSec'</span>)
+  ?.getChildByName(<span class="str">'RoundValue'</span>)?.getComponent(Label) ?? <span class="kw">null</span>;
+<span class="kw">this</span>.mergesLabel = hud.getChildByName(<span class="str">'MergesSec'</span>)
+  ?.getChildByName(<span class="str">'MergesValue'</span>)?.getComponent(Label) ?? <span class="kw">null</span>;
+<span class="kw">this</span>.nextPreviewNode = hud.getChildByName(<span class="str">'NextSec'</span>)
+  ?.getChildByName(<span class="str">'NextPreview'</span>) ?? <span class="kw">null</span>;
+<span class="kw">this</span>.timerLabel = hud.getChildByName(<span class="str">'TimerSec'</span>)
+  ?.getChildByName(<span class="str">'TimerValue'</span>)?.getComponent(Label) ?? <span class="kw">null</span>;</pre>
+
+<h3>GameOverLine e LauncherAnchor — riposizionati da Track.ts</h3>
+<pre><span class="cm">// In Track.ts — relayout() riposiziona i nodi anchor</span>
+<span class="kw">const</span> goLine = <span class="kw">this</span>.node.getChildByName(<span class="str">'GameOverLine'</span>);
+<span class="kw">if</span> (goLine) goLine.setPosition(<span class="num">0</span>, GAME_OVER_LINE_Y, <span class="num">0</span>);
+
+<span class="kw">const</span> launcher = <span class="kw">this</span>.node.getChildByName(<span class="str">'LauncherAnchor'</span>);
+<span class="kw">if</span> (launcher) launcher.setPosition(<span class="num">0</span>, TRACK_TOP_Y, <span class="num">0</span>);</pre>
+
+
+<!-- ═══════════════════════════════════════════════ REFERENCE -->
+<h2>4. Valori di riferimento (design res 720 × 1280)</h2>
+
+<table class="ref-table">
+  <tr><th>Costante / Nodo</th><th>Valore</th><th>Calcolo</th></tr>
+  <tr><td>TRACK_H</td><td>960</td><td>1280 × 0.75</td></tr>
+  <tr><td>TRACK_W</td><td>576</td><td>960 × 0.6</td></tr>
+  <tr><td>TRACK_BOTTOM_Y</td><td>−640</td><td>−1280 / 2</td></tr>
+  <tr><td>TRACK_TOP_Y</td><td>320</td><td>−640 + 960</td></tr>
+  <tr><td>FUNNEL_OFFSET</td><td>72</td><td>576 × 25 / 200</td></tr>
+  <tr><td>top width</td><td>432</td><td>576 − 2×72</td></tr>
+  <tr><td>GAME_OVER_LINE_Y</td><td>−160</td><td>(−640 + 320) / 2</td></tr>
+  <tr><td>TrackSprite.position.y</td><td>−160</td><td>−640 + 480</td></tr>
+  <tr><td>LauncherAnchor.position.y</td><td>320</td><td>= TRACK_TOP_Y</td></tr>
+  <tr><td>GameOverLine.position.y</td><td>−160</td><td>= GAME_OVER_LINE_Y</td></tr>
+  <tr><td>TimerSec.position.y</td><td>−544</td><td>−640 + 480×0.2</td></tr>
+</table>
+
+
+<!-- ═══════════════════════════════════════════════ CHECKLIST -->
+<h2>5. Checklist finale</h2>
+
+<table>
+  <tr><th>#</th><th>Operazione</th><th>✓</th></tr>
+  <tr><td>1</td><td>Canvas: DesignResolution 720×1280, FitHeight ON, FitWidth OFF</td><td>☐</td></tr>
+  <tr><td>2</td><td>Camera: ClearColor (18,18,32,255)</td><td>☐</td></tr>
+  <tr><td>3</td><td>BgSprite: SizeMode=CUSTOM PRIMA dello SpriteFrame · Widget fullscreen</td><td>☐</td></tr>
+  <tr><td>4</td><td>TrackSprite: SizeMode=CUSTOM PRIMA dello SpriteFrame · UITransform 576×960 · Position (0,−160,0)</td><td>☐</td></tr>
+  <tr><td>5</td><td>Track.ts → funnelPercentage = 25</td><td>☐</td></tr>
+  <tr><td>6</td><td>GameOverLine: Position (0,−160,0)</td><td>☐</td></tr>
+  <tr><td>7</td><td>LauncherAnchor: Position (0,320,0)</td><td>☐</td></tr>
+  <tr><td>8</td><td>GameLayer: nodo vuoto, nome esatto "GameLayer"</td><td>☐</td></tr>
+  <tr><td>9</td><td>UILayer: Widget fullscreen · UITransform 720×1280</td><td>☐</td></tr>
+  <tr><td>10</td><td>HUD: Widget fullscreen · UITransform 720×1280</td><td>☐</td></tr>
+  <tr><td>11</td><td>ScoreSec: Widget left=80 top=40 · label colori corretti</td><td>☐</td></tr>
+  <tr><td>12</td><td>RoundSec: Widget right=80 top=40</td><td>☐</td></tr>
+  <tr><td>13</td><td>MergesSec: Widget right=190 top=40</td><td>☐</td></tr>
+  <tr><td>14</td><td>NextSec: Widget left=80 bottom=40 · NextPreview con UITransform</td><td>☐</td></tr>
+  <tr><td>15</td><td>TimerSec: Position (0,−544,0) · nessun Widget</td><td>☐</td></tr>
+  <tr><td>16</td><td>VersionSec: Widget top=40 HCenter=0</td><td>☐</td></tr>
+  <tr><td>17</td><td>FullscreenBtn: Widget right=80 bottom=40 · UITransform 44×44</td><td>☐</td></tr>
+  <tr><td>18</td><td>Ordine figli Canvas: Bg → Track → GameLayer → UILayer → GameManager</td><td>☐</td></tr>
+  <tr><td>19</td><td>GameManager.ts: trova GameLayer/UILayer prima di crearli</td><td>☐</td></tr>
+  <tr><td>20</td><td>GameManager.ts: createHud() legge Label da nodi pre-esistenti</td><td>☐</td></tr>
+  <tr><td>21</td><td>Track.ts: riposiziona GameOverLine e LauncherAnchor in relayout()</td><td>☐</td></tr>
+  <tr><td>22</td><td>DEBUG_ENGINE=true per verificare che collider Box2D coincidano col visivo</td><td>☐</td></tr>
+</table>
+
+<hr>
+<p style="color:var(--muted); font-size:13px; text-align:center;">
+  FunWarriors · 2026-05-10 · Cocos Creator 3.8.8
+</p>
+
+</body>
+</html>

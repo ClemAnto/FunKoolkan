@@ -1,0 +1,156 @@
+FUNWARRIORS — ASSET GRAFICI DA PRODURRE
+========================================
+Aggiornato: 2026-05-09
+
+
+== SPRITE PERSONAGGI (35 totali) ==
+
+Formato: 128x128 base + 256x256 retina, esportare come Atlas
+
+Livello 1 — Cucciolo (nessun accessorio):
+  [ ] Rana
+  [ ] Gatto
+  [ ] Gallina
+  [ ] Lupo
+  [ ] Aquila
+  [ ] Leone
+  [ ] Drago
+
+Livello 2 — Apprendista (arma e scudo di legno):
+  [ ] Rana
+  [ ] Gatto
+  [ ] Gallina
+  [ ] Lupo
+  [ ] Aquila
+  [ ] Leone
+  [ ] Drago
+
+Livello 3 — Soldato (arma vera piccola):
+  [ ] Rana
+  [ ] Gatto
+  [ ] Gallina
+  [ ] Lupo
+  [ ] Aquila
+  [ ] Leone
+  [ ] Drago
+
+Livello 4 — Guerriero (elmetto + arma imponente):
+  [ ] Rana      (livello max — Pugnale)
+  [ ] Gatto     (livello max — Spada)
+  [ ] Gallina   (livello max — Lancia)
+  [ ] Lupo      (Ascia)
+  [ ] Aquila    (Arco)
+  [ ] Leone     (Mazza)
+  [ ] Drago     (Scettro di fuoco)
+
+Livello 5 — Campione (elmetto + stivali + arma rara) — esplode al raggiungimento:
+  [ ] Lupo      (livello max)
+  [ ] Aquila    (livello max)
+  [ ] Leone
+  [ ] Drago
+
+Livello 6 — Eroe (armatura completa + arma epica) — esplode al raggiungimento:
+  [ ] Leone     (livello max)
+  [ ] Drago
+
+Livello 7 — Leggenda (armatura e arma leggendaria) — esplode al raggiungimento:
+  [ ] Drago     (livello max assoluto)
+
+TOTALE: 28 base + 4 Campione + 2 Eroe + 1 Leggenda = 35 sprite
+
+
+== ANIMAZIONI PERSONAGGI ==
+
+  [ ] Idle / respiro leggero          — 35 varianti (una per sprite)
+  [ ] Squash on landing               — riutilizzabile su tutti
+  [ ] Pop on merge                    — riutilizzabile su tutti
+  [ ] Esplosione Campione (livello 5) — 1 animazione dedicata
+  [ ] Esplosione Eroe (livello 6)     — 1 animazione dedicata
+  [ ] Esplosione Leggenda (livello 7) — 1 animazione dedicata
+  [ ] Esplosione malus                — warrior che scende sotto la linea
+
+
+== VFX PARTICELLARI (4 asset, riutilizzati con parametri variabili) ==
+
+  [ ] Scintille        — tier punteggio 4-6 (startSize, totalParticles scalati)
+  [ ] Esplosione       — tier 5-6 + bonus Campione/Eroe/Leggenda
+  [ ] Coriandoli       — tier 5-6, con gravità
+  [ ] Aura magnetismo  — asset dedicato fisso (piccolo, sempre uguale)
+
+Nota: screen shake, flash overlay e slowmo sono implementati via codice (nessun asset).
+
+
+== AMBIENTE / PISTA ==
+
+  [ ] Texture pista       — ghiaccio chiaro o legno laccato (aspect ratio 500:700)
+  [ ] Nastro rosso        — banda orizzontale animata (linea game over, metà pista)
+  [ ] Background          — illustrazione fissa festa/torneo medievale
+  [ ] Pareti pista        — funnel inclinato (sprite o procedurale)
+
+
+== UI / HUD ==
+
+  [ ] Freccia di mira         — asta + testa freccia, scala con forza, colore verde→rosso
+  [ ] Corda elastica fionda   — probabilmente procedurale (Graphics Cocos)
+  [ ] Indicatore timer        — 4 stati: quasi invisibile / bianco / arancione pulse / rosso pulse
+  [ ] Cornice preview NEXT    — sfondo/cornice per anteprima warrior successivo
+
+  Floating score — 6 stili (testo + colore per ogni tier):
+  [ ] Tier 1  < 50 pt       testo piccolo, bianco
+  [ ] Tier 2  50-299 pt     testo medio, giallo
+  [ ] Tier 3  300-999 pt    testo grande bold, rosso
+  [ ] Tier 4  1000-3999 pt  testo molto grande, oro
+  [ ] Tier 5  4000-11999 pt testo enorme, oro con outline
+  [ ] Tier 6  >= 12000 pt   testo massivo pulsante, arcobaleno
+
+  Pulsanti UI (~8):
+  [ ] Gioca
+  [ ] Riprova
+  [ ] Menu
+  [ ] Pausa
+  [ ] Resume
+  [ ] Audio on/off
+  [ ] Fullscreen
+  [ ] Info
+
+  Schermate (3):
+  [ ] Splash / menu principale
+  [ ] Game over (punteggio finale, best score, round raggiunto)
+  [ ] Pausa (settings + riprendi + esci)
+
+  Tutorial popup (3-4 schermate):
+  [ ] "Trascina verso il basso"
+  [ ] "Rilascia per lanciare"
+  [ ] "Unisci due uguali!"
+  [ ] [eventuale 4a schermata — game over / linea rossa]
+
+  Logo:
+  [ ] Logo / titolo "FunWarriors" — per splash screen e thumbnail
+
+
+== ASSET DI MARKETING (Fase 5 — luglio 2026) ==
+
+  [ ] Thumbnail 512x512       — personaggi iconici, colori saturi, leggibile in piccolo
+  [ ] Screenshot gameplay     — 3-5 immagini
+  [ ] Trailer GIF/video       — 15-30s: lancio → merge → esplosione → round up
+
+
+== PRIORITA' DI PRODUZIONE ==
+
+  1. 35 sprite personaggi      — blocco critico, il piu' lungo
+  2. Background + texture pista
+  3. Nastro rosso + pareti pista
+  4. Animazioni idle + merge
+  5. VFX particellari (4 asset)
+  6. UI definitiva (HUD, schermate, pulsanti)
+  7. Asset marketing
+
+
+== RIFERIMENTI STILE ==
+
+  - Direzione: cartoon kawaii, "giocattoloso", colori saturi e allegri
+  - Personaggi: chibi tondeggianti su base circolare, numero livello visibile
+  - Pista: superficie liscia (ghiaccio chiaro o legno laccato)
+  - Background: tema festa/torneo medievale, decorativo non distraente
+  - Specie per colore: Rana verde, Gatto arancione, Gallina bianca,
+    Lupo grigio, Aquila marrone, Leone dorato, Drago viola
