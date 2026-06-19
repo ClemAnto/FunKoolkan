@@ -6,7 +6,7 @@
 //   1. flips PORTAL to 'crazygames' in PortalConfig.ts (temporarily),
 //   2. runs the same headless web-mobile build as scripts/build.js,
 //   3. ALWAYS restores PortalConfig.ts (even if the build fails),
-//   4. zips build/web-mobile -> dist/funwarriors-crazygames.zip via PowerShell.
+//   4. zips build/web-mobile -> dist/funkoolkan-crazygames.zip via PowerShell.
 //
 // The standalone GitHub Pages flow is untouched: PORTAL stays 'none' in git.
 
@@ -20,7 +20,7 @@ const PROJECT = path.resolve(__dirname, '..');
 const CONFIG  = path.join(PROJECT, 'assets', 'scripts', 'config', 'PortalConfig.ts');
 const BUILD   = path.join(PROJECT, 'build', 'web-mobile');
 const DIST    = path.join(PROJECT, 'dist');
-const ZIP     = path.join(DIST, 'funwarriors-crazygames.zip');
+const ZIP     = path.join(DIST, 'funkoolkan-crazygames.zip');
 
 const FLAG_RE = /export const PORTAL: PortalKind = '[^']*';/;
 

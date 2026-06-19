@@ -31,10 +31,10 @@ if (patched !== html) {
 fs.writeFileSync(path.join(BUILD_DIR, '.nojekyll'), '');
 
 // Resolve remote URL (inherits auth from git credential store)
-const remoteUrl = execSync('git remote get-url FanWarriors', { cwd: ROOT, encoding: 'utf8' }).trim();
+const remoteUrl = execSync('git remote get-url origin', { cwd: ROOT, encoding: 'utf8' }).trim();
 
 // Work in a temp dir outside the repo so no .gitignore applies
-const TMP = path.join(os.tmpdir(), 'funwarriors-gh-deploy');
+const TMP = path.join(os.tmpdir(), 'funkoolkan-gh-deploy');
 if (fs.existsSync(TMP)) fs.rmSync(TMP, { recursive: true, force: true });
 fs.mkdirSync(TMP);
 
@@ -47,13 +47,13 @@ try {
     // Init fresh git repo and push to gh-pages branch
     const git = (cmd) => execSync(`git ${cmd}`, { cwd: TMP, stdio: 'pipe', encoding: 'utf8' });
     git('init');
-    git('config user.email "deploy@funwarriors.local"');
-    git('config user.name "FunWarriors Deploy"');
+    git('config user.email "deploy@funkoolkan.local"');
+    git('config user.name "FunKoolkan Deploy"');
     git('add -A');
     git(`commit -m "deploy: v${version}"`);
     execSync(`git push -f "${remoteUrl}" HEAD:gh-pages`, { cwd: TMP, stdio: 'inherit' });
 
-    console.log(`Done! → https://clemanto.github.io/FanWarriors/`);
+    console.log(`Done! → https://clemanto.github.io/FunKoolkan/`);
 } finally {
     fs.rmSync(TMP, { recursive: true, force: true });
 }

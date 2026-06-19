@@ -15,7 +15,7 @@ const { ccclass, property } = _decorator;
  * so the wording can be updated in code without touching the scene.
  */
 const POLICY_TEXT =
-    'FunWarriors stores only what the online leaderboard needs.\n\n' +
+    'FunKoolkan stores only what the online leaderboard needs.\n\n' +
     'If you submit a score, we save your 3-letter tag, score and round ' +
     '(via Google Firebase). No personally identifying data, and nothing ' +
     'is sent unless you submit.\n\n' +
