@@ -1,5 +1,6 @@
 import { _decorator, Component, UITransform, view, CCFloat, Collider2D, Size } from 'cc';
 import { EDITOR } from 'cc/env';
+import { configurePerspective } from '../config/Perspective';
 
 const { ccclass, property, executeInEditMode, requireComponent, disallowMultiple, menu } = _decorator;
 
@@ -20,9 +21,10 @@ const { ccclass, property, executeInEditMode, requireComponent, disallowMultiple
  * Everything parented under the arena (Box2D borders, sprite layer) inherits this
  * transform — "tutto segue l'arena" comes for free.
  *
- * The perspective squash (elliptical base, Y at 50%) is NOT done here: it lives only
- * in the physics→sprite mapping (see PerspectiveMapper). This fit-scale is uniform and
- * stays above that, so the two never get mixed up.
+ * The perspective squash is NOT done here: this fit-scale stays a UNIFORM scale. This
+ * component only calls configurePerspective(designHeight) in onLoad to key the depth map to
+ * the arena footprint; the foreshorten itself lives in Stone.lateUpdate (projectY for the
+ * position, depthFactor for the vertical ellipse), which this uniform scale sits above.
  *
  * Scene requirements:
  *  - anchor = (0.5, 0)  → bottom-centre pivot; the arena grows upward.
@@ -61,7 +63,7 @@ export class FitScale extends Component {
     @property({ tooltip: 'Re-apply Box2D colliders under this node when the scale changes (resize), so the physics resync to the new lossy-scale.' })
     reapplyCollidersOnResize = true;
 
-    /** Active arena, so physics / PerspectiveMapper can read the live design rect and scale. */
+    /** Active arena, so physics / perspective config can read the live design rect and scale. */
     static instance: FitScale | null = null;
 
     private _design = new Size();
@@ -74,6 +76,7 @@ export class FitScale extends Component {
             this.designWidth  > 0 ? this.designWidth  : ut.contentSize.width,
             this.designHeight > 0 ? this.designHeight : ut.contentSize.height,
         );
+        configurePerspective(this._design.height);   // ground-Y depth map keyed to the footprint
     }
 
     onEnable(): void {

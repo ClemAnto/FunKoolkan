@@ -1,5 +1,5 @@
 import { _decorator, Component, Node, Vec2, Vec3, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate } from 'cc';
-import { PERSPECTIVE_Y_SCALE } from '../config/Perspective';
+import { projectY, depthFactor } from '../config/Perspective';
 import { Rune } from './Rune';
 
 const { ccclass } = _decorator;
@@ -8,10 +8,11 @@ const _v = new Vec3();
 /**
  * Links a moving Box2D body to its visual rune (a prefab instance) in another layer.
  *
- * The body lives in the arena's UN-squashed local space and ROTATES (warrior physics).
- * The view is a separate node (NOT a child of the body, so it never inherits the body's
- * rotation): each frame this copies the body's POSITION to the view with Y squashed by
- * PERSPECTIVE_Y_SCALE (the 45° look) and matches the arena's uniform fit-scale.
+ * The body lives in the arena's flat GROUND space and ROTATES (warrior physics). The view is
+ * a separate node (NOT a child of the body, so it never inherits the body's rotation): each
+ * frame this copies the body's POSITION to the view via projectY (the mild perspective
+ * foreshorten), matches the arena's uniform fit-scale, and squashes the view's vertical axis
+ * by depthFactor so the disc reads as an ellipse on the tilted ground.
  */
 @ccclass('Stone')
 export class Stone extends Component {
@@ -27,12 +28,14 @@ export class Stone extends Component {
     lateUpdate(): void {
         const view = this.viewNode, arena = this.arena;
         if (!view?.isValid || !arena?.isValid) return;
-        const p = this.node.position;                  // arena-local (body is a direct child of arena)
-        _v.set(p.x, p.y * PERSPECTIVE_Y_SCALE, p.z);   // squash Y for the 45° view (position only)
+        const p = this.node.position;                  // arena-local ground point (body is a direct child of arena)
+        _v.set(p.x, projectY(p.y), p.z);               // perspective foreshorten of depth (position; X 1:1)
         Vec3.transformMat4(_v, _v, arena.worldMatrix); // arena-local → world
         view.setWorldPosition(_v);
-        const ws = arena.worldScale, s = this.viewScale;   // track the arena fit-scale (× viewScale)
-        view.setWorldScale(ws.x * s, ws.y * s, 1);
+        // Draw the ground disc as an ELLIPSE: full width, vertical semi-axis × depthFactor (the
+        // projection slope), so the sprite silhouette matches where the physics circle is.
+        const ws = arena.worldScale, s = this.viewScale, f = depthFactor(p.y);
+        view.setWorldScale(ws.x * s, ws.y * s * f, 1);
         // Mirror the physics body's spin onto the designated inner node (base stays upright).
         if (this.rotationNode?.isValid) this.rotationNode.angle = this.node.angle;
     }

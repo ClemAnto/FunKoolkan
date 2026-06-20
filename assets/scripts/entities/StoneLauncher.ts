@@ -1,7 +1,7 @@
 import { _decorator, Component, Node, Vec2, Vec3, UITransform, input, Input, EventTouch, EventMouse, CCFloat, Prefab, Graphics, Color } from 'cc';
 import { Stone } from './Stone';
 import { ArenaBounds } from './ArenaBounds';
-import { PERSPECTIVE_Y_SCALE } from '../config/Perspective';
+import { projectY, unprojectY, depthFactor } from '../config/Perspective';
 
 const { ccclass, property } = _decorator;
 
@@ -35,8 +35,9 @@ function raySegT(ox: number, oy: number, dx: number, dy: number, ax: number, ay:
  *  - the launch direction (SLINGSHOT: opposite the pull — drag away from the target, release toward it, ±110° cone).
  * Power ∝ pull distance (launcher → touch). The CrossbowLauncher arm follows the shot direction.
  *
- * Everything is computed in arena-local space (the launcher is a child of Arena), de-squashing
- * Y by PERSPECTIVE_Y_SCALE for the physics. The preview integrates the SAME physics as the
+ * Everything is computed in arena-local space (the launcher is a child of Arena); the spawn
+ * point is de-projected via unprojectY and the launch/preview velocity via depthFactor at the
+ * spawn depth (depth-varying, not a constant). The preview integrates the SAME physics as the
  * launched stone (damping + restitution + friction mixed with the wall), so it tracks reality.
  */
 @ccclass('StoneLauncher')
@@ -76,8 +77,10 @@ export class StoneLauncher extends Component {
     private _cur = new Vec2();         // current touch, UI coords
     private _preview: Graphics | null = null;
     private _segs: Seg[] | null = null;
+    private _segsSrc: readonly Vec2[] | null = null;   // boundaryPhysics ref the cache was built from
     private _path: Vec2[] = [];
     private _trajPhase = 0;
+    private _dotColor = new Color(120, 220, 255, 200);   // reused in _drawDots (no per-frame alloc)
 
     onEnable(): void {
         input.on(Input.EventType.TOUCH_START, this._onTouchStart, this);
@@ -126,8 +129,8 @@ export class StoneLauncher extends Component {
         if (len < this.minDrag) return;
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull
-        const pY = PERSPECTIVE_Y_SCALE || 1;
-        const vel = new Vec2(eff.x, eff.y / pY).normalize().multiplyScalar(this.launchSpeed * power);
+        const fy = depthFactor(unprojectY(this.node.position.y)) || 1;   // de-project the visual aim at the spawn depth
+        const vel = new Vec2(eff.x, eff.y / fy).normalize().multiplyScalar(this.launchSpeed * power);
         Stone.spawn({
             arena: this.arena,
             layer: this.warriorsLayer,
@@ -157,8 +160,8 @@ export class StoneLauncher extends Component {
         g.clear();
         if (len < this.minDrag) { this._path = []; return; }
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
-        const pY = PERSPECTIVE_Y_SCALE || 1;
-        const d0 = new Vec2(eff.x, eff.y / pY).normalize();
+        const fy = depthFactor(unprojectY(this.node.position.y)) || 1;
+        const d0 = new Vec2(eff.x, eff.y / fy).normalize();
         this._path = this._simulate(this._spawnPhysics(), d0.multiplyScalar(this.launchSpeed * power));
         this._drawDots(g, this._path);
     }
@@ -180,11 +183,10 @@ export class StoneLauncher extends Component {
         return new Vec2(_tmp.x - lp.x, _tmp.y - lp.y);
     }
 
-    /** Spawn point in physics (de-squashed) space, derived from the launcher position. */
+    /** Spawn point in physics (ground) space, de-projected from the launcher's visual position. */
     private _spawnPhysics(): Vec2 {
-        const pY = PERSPECTIVE_Y_SCALE || 1;
         const lp = this.node.position;
-        return new Vec2(lp.x, lp.y / pY);
+        return new Vec2(lp.x, unprojectY(lp.y));
     }
 
     /** Clamp a desired shot direction (visual, unit) into the ±110° cone from straight up. */
@@ -197,9 +199,9 @@ export class StoneLauncher extends Component {
     }
 
     private _segments(): Seg[] {
-        if (this._segs) return this._segs;
         const b = this.arenaBounds?.boundaryPhysics;
-        if (!b || b.length < 2) return [];
+        if (!b || b.length < 2) return this._segs ?? [];
+        if (this._segs && this._segsSrc === b) return this._segs;   // rebuild only if ArenaBounds re-derived the boundary
         const segs: Seg[] = [];
         const n = b.length, r = this.stoneRadius;
         for (let i = 0; i < n; i++) {
@@ -212,6 +214,7 @@ export class StoneLauncher extends Component {
             segs.push({ ax: a0.x + nx * r, ay: a0.y + ny * r, bx: b0.x + nx * r, by: b0.y + ny * r, nx, ny });
         }
         this._segs = segs;
+        this._segsSrc = b;
         return segs;
     }
 
@@ -259,30 +262,47 @@ export class StoneLauncher extends Component {
         return pts;
     }
 
+    /**
+     * Draw the trajectory as marching dots. Walks the flat physics polyline, projecting each
+     * point to visual space INLINE (projectY) — no per-frame array allocation — and draws each
+     * dot as an ellipse whose vertical semi-axis follows depthFactor at that depth, so the
+     * dots foreshorten exactly like the launched stone. Allocation-free hot path (this runs
+     * every frame while aiming): one reused Color, only its alpha changes.
+     */
     private _drawDots(g: Graphics, physPts: Vec2[]): void {
-        const pY = PERSPECTIVE_Y_SCALE || 1;
-        const vis = physPts.map(p => new Vec2(p.x, p.y * pY));
-        let total = 0;
-        for (let i = 1; i < vis.length; i++) total += Vec2.distance(vis[i - 1], vis[i]);
+        const n = physPts.length;
+        if (n < 2) return;
+        let total = 0, pvx = physPts[0].x, pvy = projectY(physPts[0].y);
+        for (let i = 1; i < n; i++) {
+            const vx = physPts[i].x, vy = projectY(physPts[i].y);
+            total += Math.hypot(vx - pvx, vy - pvy);
+            pvx = vx; pvy = vy;
+        }
         if (total < 0.001) return;
         const step = 30, dotR = 8;
+        const col = this._dotColor;                 // reused; only alpha changes per dot
         let phase = this._trajPhase, cum = 0;
-        for (let i = 1; i < vis.length; i++) {
-            const from = vis[i - 1], to = vis[i];
-            const ex = to.x - from.x, ey = to.y - from.y;
+        let fpy = physPts[0].y, fvx = physPts[0].x, fvy = projectY(fpy);
+        for (let i = 1; i < n; i++) {
+            const tpy = physPts[i].y, tvx = physPts[i].x, tvy = projectY(tpy);
+            const ex = tvx - fvx, ey = tvy - fvy;
             const segLen = Math.hypot(ex, ey);
-            if (segLen < 0.001) continue;
-            const ux = ex / segLen, uy = ey / segLen;
-            let dist = phase;
-            while (dist < segLen) {
-                const progress = (cum + dist) / total;
-                g.fillColor = new Color(120, 220, 255, Math.round(200 * (1 - progress)));
-                g.ellipse(from.x + ux * dist, from.y + uy * dist, dotR, dotR * pY);
-                g.fill();
-                dist += step;
+            if (segLen >= 0.001) {
+                const ux = ex / segLen, uy = ey / segLen;
+                let dist = phase;
+                while (dist < segLen) {
+                    const t = dist / segLen;
+                    col.a = Math.round(200 * (1 - (cum + dist) / total));
+                    g.fillColor = col;
+                    const f = depthFactor(fpy + (tpy - fpy) * t);
+                    g.ellipse(fvx + ux * dist, fvy + uy * dist, dotR, dotR * f);
+                    g.fill();
+                    dist += step;
+                }
+                phase = Math.max(0, dist - segLen);
+                cum += segLen;
             }
-            phase = Math.max(0, dist - segLen);
-            cum += segLen;
+            fpy = tpy; fvx = tvx; fvy = tvy;
         }
     }
 
