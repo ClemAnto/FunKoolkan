@@ -42,7 +42,7 @@ const MAIN_MENU_SCENE    = 'MainMenu';
 /** Delay before the game-over / victory panel fades in, so the end moment (shake/cascade) plays first. */
 const END_PANEL_DELAY    = 1.0;
 const DEBUG              = false;
-const DEBUG_ENGINE       = false;
+const DEBUG_ENGINE       = true;
 const SHOW_ENDLINE_DEBUG = false;  // set true to draw the purple dashed game-over threshold line (debug)
 const LIVE_RESIZE        = true;   // real-time relayout on browser resize — kept on in production too (negligible cost, fires only on resize)
 const TEST_FIRST_LAUNCH_GAMEOVER = false; // TEST: first launch forces game-over @15k to exercise the leaderboard flow

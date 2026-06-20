@@ -1,72 +1,92 @@
 /**
- * Global perspective configuration — the "tilted camera" look as a MILD 1-point taper.
+ * Global perspective configuration — MODEL B: true 1-point perspective (X converges to the
+ * vertical centre line, Y is non-linear, objects shrink with depth in BOTH axes).
  *
- * Physics is a FLAT top-down ground plane (Box2D: round, constant-radius bodies). Rendering
- * foreshortens depth (ground-Y) by a factor that VARIES with depth: gentler near the bottom
- * (camera-close), stronger toward the top (toward the horizon). The same factor drives BOTH
- * the vertical foreshortening of POSITION and the vertical squash of a body's SIZE, so a flat
- * disc on the ground always projects to an ellipse whose silhouette matches where the physics
- * circle actually is — vertical contacts stay visually coherent BY CONSTRUCTION (the size
- * factor equals the projection slope). This is the property the old constant-squash model
- * lost the moment size varied with depth.
+ * Physics is a FLAT ground rect [−W/2, +W/2] × [0, D] (Box2D round, constant-radius bodies).
+ * Rendering is a projective homography that maps that rect to the visible TRAPEZOID (wider at
+ * the bottom/near edge, narrower at the top/far edge) — matching a perspective floor. Because
+ * it is a homography, straight ground lines stay straight on screen, and the preview trajectory
+ * (simulated in flat ground space) projects to exactly where the launched stone goes.
  *
- *   depthFactor(yp) = projection slope at depth yp  (== vertical SIZE factor)
- *   projectY(yp)    = ∫ depthFactor = yp·(sNear + ½·k·yp)    ground-Y → screen-Y
- *   unprojectY(yv)  = inverse (solve the quadratic)           screen-Y → ground-Y
+ *   s(yp)        = depth scale ∈ [sFar, 1]   (1 near/bottom, sFar far/top)
+ *   projectX     = xp · s            (X converges toward centre — the real shrink)
+ *   projectY     = Yhor · (1 − s)    (non-linear vertical pile toward the horizon)
+ *   sizeX        = s                 (sprite horizontal scale)
+ *   sizeY        = s · vy            (sprite vertical scale; vy in [s,1] via Y_FORESHORTEN)
  *
- * X is passed 1:1 (no vanishing-point convergence — the "mild" hedge that keeps vertical
- * stacks coherent and avoids a per-stone divide; the cost is that stones foreshorten/flatten
- * toward the top rather than shrinking uniformly). Pure rendering transform, configured once
- * from the arena footprint height. FitScale stays a uniform scale ABOVE this.
+ * Trade-off (vs model C): vertical stone-stone contact reads as a slight OVERLAP (the upper rune
+ * sinks into the lower), ~0–7px, one-signed and growing monotonically with depth — never an
+ * actual gap, never sign-flipping (sizeY compresses the projected centres slower than the radii).
+ * Accepted for the stronger, art-matching perspective.
+ * Pure rendering transform; physics stays flat. Configured once from the arena footprint.
  */
 
-/** Vertical foreshortening at the NEAR (bottom) edge: screen-Y per ground-Y. */
-export const PERSPECTIVE_SCALE_NEAR = 0.8;
-/** Vertical foreshortening at the FAR (top) edge. Set FAR = NEAR · (far/near tile ratio
- *  measured off the floor art). Keeping NEAR+FAR ≈ 1.0 preserves the old average squash (0.5),
- *  so the physics playfield depth — and the radius/launch-speed tuning — stays unchanged.
- *  Spread (NEAR≫FAR) = stronger perspective; here 0.8/0.2 (4:1) for a pronounced foreshorten. */
-export const PERSPECTIVE_SCALE_FAR = 0.2;
+/** Far(top)/near(bottom) edge-width ratio = the perspective strength. Set to the floor art's
+ *  top-tile/bottom-tile width ratio. LOWER = stronger convergence (more shrink toward the top). */
+export const PERSPECTIVE_FAR_SCALE = 0.58;
 
-// Cached constants, configured once from the footprint height H (visual/image space).
-let _H = 0;        // visual footprint height
-let _Hphys = 0;    // physics playfield depth (ground-Y spans [0, _Hphys])
-let _sb = PERSPECTIVE_SCALE_NEAR;
-let _ds = PERSPECTIVE_SCALE_FAR - PERSPECTIVE_SCALE_NEAR;   // sFar - sNear (negative)
-let _k = 0;        // _ds / _Hphys
+/** Extra VERTICAL foreshorten of the runes, 0..1. 0 = no extra squash (runes just shrink with X,
+ *  staying round); 1 = full ground-tilt (vertical scale = s², runes go flat). Lower this to
+ *  "reduce the Y perspective". */
+export const PERSPECTIVE_Y_FORESHORTEN = 0.5;
 
-/** Configure from the arena footprint height (visual px). Call once at startup and on resize. */
-export function configurePerspective(footprintHeight: number): void {
-    if (footprintHeight <= 0) return;
-    _H = footprintHeight;
-    _sb = PERSPECTIVE_SCALE_NEAR;
-    _ds = PERSPECTIVE_SCALE_FAR - PERSPECTIVE_SCALE_NEAR;
-    _Hphys = 2 * _H / (PERSPECTIVE_SCALE_NEAR + PERSPECTIVE_SCALE_FAR);   // makes projectY(_Hphys) === H
-    _k = _ds / _Hphys;
+// Cached constants, configured once from the footprint (visual px). 0 until configured.
+let _W = 0;        // ground width (== visible bottom-edge width)
+let _H = 0;        // visible footprint height (near rim → far rim on screen)
+let _D = 0;        // ground depth (physics Y spans [0, _D])
+let _a = 0;        // = 1/sFar − 1
+let _Yhor = 0;     // horizon distance (also the Lspan); projectY maps [0,_D] → [0,_H]
+let _invD = 0;
+let _sFar = PERSPECTIVE_FAR_SCALE;
+
+/** Configure from the arena footprint (visual px). Call once at startup and on resize. */
+export function configurePerspective(footprintWidth: number, footprintHeight: number): void {
+    if (footprintWidth <= 0 || footprintHeight <= 0) return;
+    _W = footprintWidth; _H = footprintHeight;
+    _sFar = Math.min(0.95, Math.max(0.1, PERSPECTIVE_FAR_SCALE));
+    _a = 1 / _sFar - 1;
+    _Yhor = _H / (1 - _sFar);          // projectY(_D) === _H
+    _D = _H / _sFar;                   // ground depth; makes near-edge vertical slope == 1
+    _invD = 1 / _D;
 }
 
-/** Physics playfield depth — ground-Y range is [0, physicsHeight()]. 0 until configured. */
-export function physicsHeight(): number { return _Hphys; }
+/** Ground depth — physics Y spans [0, physicsDepth()]. 0 until configured. */
+export function physicsDepth(): number { return _D; }
+/** Ground width (== visible bottom-edge width). */
+export function physicsWidth(): number { return _W; }
 
-/** Vertical foreshorten / SIZE factor at ground depth yp. Equals projectY'(yp). */
-export function depthFactor(yp: number): number {
-    if (_Hphys <= 0) return _sb;
-    return _sb + _k * yp;     // = sNear + (sFar - sNear)·(yp / _Hphys)
+/** Depth scale s(yp) ∈ [sFar, 1]: 1 at the near (bottom) edge, sFar at the far (top) edge. */
+export function depthScale(yp: number): number {
+    if (_D <= 0) return 1;
+    let u = yp * _invD;
+    if (u < 0) u = 0; else if (u > 1) u = 1;
+    return 1 / (1 + _a * u);
 }
 
-/** Ground-Y (physics) → screen-Y (visual). Monotone on [0, _Hphys]. */
-export function projectY(yp: number): number {
-    return yp * (_sb + 0.5 * _k * yp);
+/** Forward map ground → visual. */
+export function projectX(xp: number, yp: number): number { return xp * depthScale(yp); }
+export function projectY(yp: number): number { return _Yhor * (1 - depthScale(yp)); }
+
+/** Sprite scale factors (silhouette of the projected ground circle). */
+export function sizeXFactor(yp: number): number { return depthScale(yp); }
+export function sizeYFactor(yp: number): number {
+    const s = depthScale(yp);
+    return s * (1 - PERSPECTIVE_Y_FORESHORTEN * (1 - s));   // Y_FORESHORTEN: 1 → s², 0 → s
 }
 
-/** Screen-Y (visual) → ground-Y (physics). Guarded against the discriminant going negative
- *  (a visual Y above the far rim clamps to the far rim instead of returning NaN). */
+// Inverse map visual → ground (scalar, allocation-free; used per shot/aim, not per frame).
+// Guarded so a visual Y above the far rim / below the near rim clamps instead of going wild.
+function sAtVisualY(yv: number): number {
+    let s = _Yhor > 0 ? 1 - yv / _Yhor : 1;
+    if (s < _sFar) s = _sFar; else if (s > 1) s = 1;
+    return s;
+}
+export function unprojectX(xv: number, yv: number): number { return xv / sAtVisualY(yv); }
 export function unprojectY(yv: number): number {
-    if (Math.abs(_k) < 1e-9) return _sb !== 0 ? yv / _sb : yv;
-    const disc = _sb * _sb + 2 * _k * yv;
-    if (disc <= 0) return _Hphys;
-    return (-_sb + Math.sqrt(disc)) / _k;
+    if (_D <= 0 || _a === 0) return yv;
+    const s = sAtVisualY(yv);
+    return ((1 / s - 1) / _a) * _D;
 }
 
-/** @deprecated Linear-squash alias kept only for the legacy, unused PerspectiveMapper. */
+/** @deprecated Linear-squash alias kept only for the legacy, unused-by-runes PerspectiveMapper. */
 export const PERSPECTIVE_Y_SCALE = 0.5;

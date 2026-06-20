@@ -1,11 +1,12 @@
-import { _decorator, Component, Node, Vec2, Vec3, UITransform, input, Input, EventTouch, EventMouse, CCFloat, Prefab, Graphics, Color } from 'cc';
+import { _decorator, Component, Node, Vec2, Vec3, UITransform, input, Input, EventTouch, EventMouse, CCFloat, CCInteger, Prefab, Graphics, Color, instantiate } from 'cc';
 import { Stone } from './Stone';
+import { Rune } from './Rune';
 import { ArenaBounds } from './ArenaBounds';
-import { projectY, unprojectY, depthFactor } from '../config/Perspective';
+import { projectX, projectY, sizeXFactor, unprojectX, unprojectY } from '../config/Perspective';
 
 const { ccclass, property } = _decorator;
 
-const MAX_AIM_ANGLE = 110 * Math.PI / 180;   // aim cone from straight-up
+const MAX_AIM_ANGLE = 67.5 * Math.PI / 180;   // aim cone from straight-up (±75% toward horizontal)
 const SIM_DT = 1 / 60;
 const SIM_MAX_STEPS = 600;
 const SIM_MIN_SPEED = 10;
@@ -33,12 +34,12 @@ function raySegT(ox: number, oy: number, dx: number, dy: number, ax: number, ay:
  *  - the spawn point of the launched stone,
  *  - the trajectory preview origin,
  *  - the launch direction (SLINGSHOT: opposite the pull — drag away from the target, release toward it, ±110° cone).
- * Power ∝ pull distance (launcher → touch). The CrossbowLauncher arm follows the shot direction.
+ * Power ∝ pull distance (launcher → touch). The StoneLauncherArm follows the shot direction.
  *
  * Everything is computed in arena-local space (the launcher is a child of Arena); the spawn
- * point is de-projected via unprojectY and the launch/preview velocity via depthFactor at the
- * spawn depth (depth-varying, not a constant). The preview integrates the SAME physics as the
- * launched stone (damping + restitution + friction mixed with the wall), so it tracks reality.
+ * point is de-projected via unprojectX/unprojectY and the launch/preview velocity via _groundDir
+ * (the inverse-map direction at the launcher — the homography couples X and Y). The preview
+ * integrates the SAME physics as the launched stone (damping/restitution/friction), so it tracks reality.
  */
 @ccclass('StoneLauncher')
 export class StoneLauncher extends Component {
@@ -48,7 +49,7 @@ export class StoneLauncher extends Component {
     warriorsLayer: Node | null = null;
     @property({ type: Prefab, tooltip: 'Rune prefab instantiated as the launched stone view.' })
     runePrefab: Prefab | null = null;
-    @property({ type: Node, tooltip: 'Rotating crossbow arm (CrossbowLauncher). Optional.' })
+    @property({ type: Node, tooltip: 'Rotating arm (StoneLauncherArm). Optional.' })
     launcherNode: Node | null = null;
     @property({ type: ArenaBounds, tooltip: 'Arena boundary — wall segments + material for the bounce trajectory.' })
     arenaBounds: ArenaBounds | null = null;
@@ -72,8 +73,20 @@ export class StoneLauncher extends Component {
     stoneFriction = 0.3;
     @property({ type: CCFloat, slide: true, range: [0, 5, 0.05], tooltip: 'Stone linear damping.' })
     stoneDamping = 0.5;
+    @property({ tooltip: 'Debug: draw a flat ellipse + rotation radius on each launched stone.' })
+    debugStones = false;
+
+    @property({ type: Node, tooltip: 'NEXT preview container — a Rune prefab is instantiated here to show the upcoming gem.' })
+    nextPreview: Node | null = null;
+    @property({ type: CCInteger, tooltip: 'Number of gem types (random pick per launch).' })
+    numGemTypes = 2;
+    @property({ type: CCFloat, tooltip: 'Scale of the rune shown in the NEXT preview.' })
+    nextPreviewScale = 0.6;
 
     private _aiming = false;
+    private _currentType = 0;          // gem type that fires on the next release
+    private _nextType = 0;             // gem type shown in the NEXT preview
+    private _nextRune: Rune | null = null;
     private _cur = new Vec2();         // current touch, UI coords
     private _preview: Graphics | null = null;
     private _segs: Seg[] | null = null;
@@ -83,6 +96,7 @@ export class StoneLauncher extends Component {
     private _dotColor = new Color(120, 220, 255, 200);   // reused in _drawDots (no per-frame alloc)
 
     onEnable(): void {
+        Stone.debugDraw = this.debugStones;
         input.on(Input.EventType.TOUCH_START, this._onTouchStart, this);
         input.on(Input.EventType.TOUCH_MOVE,  this._onTouchMove,  this);
         input.on(Input.EventType.TOUCH_END,   this._onTouchEnd,   this);
@@ -99,6 +113,28 @@ export class StoneLauncher extends Component {
         input.off(Input.EventType.MOUSE_DOWN,  this._onMouseDown,  this);
         input.off(Input.EventType.MOUSE_MOVE,  this._onMouseMove,  this);
         input.off(Input.EventType.MOUSE_UP,    this._onMouseUp,    this);
+    }
+
+    start(): void {
+        this._currentType = this._randomType();
+        this._nextType = this._randomType();
+        this._buildNextPreview();
+    }
+
+    private _randomType(): number { return Math.floor(Math.random() * Math.max(1, this.numGemTypes)); }
+
+    /** Instantiate a static Rune (once) in the NEXT container and show the upcoming gem type.
+     *  Keeps any existing children (e.g. a frame) — only adds the rune. */
+    private _buildNextPreview(): void {
+        if (!this._nextRune?.isValid) {
+            if (!this.nextPreview?.isValid || !this.runePrefab) return;
+            const r = instantiate(this.runePrefab) as unknown as Node;
+            r.setParent(this.nextPreview);
+            r.setPosition(0, 0, 0);
+            r.setScale(this.nextPreviewScale, this.nextPreviewScale, 1);
+            this._nextRune = r.getComponent(Rune);
+        }
+        this._nextRune?.setType(this._nextType);
     }
 
     update(dt: number): void {
@@ -128,9 +164,8 @@ export class StoneLauncher extends Component {
         const len = Math.hypot(pull.x, pull.y);
         if (len < this.minDrag) return;
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
-        const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull
-        const fy = depthFactor(unprojectY(this.node.position.y)) || 1;   // de-project the visual aim at the spawn depth
-        const vel = new Vec2(eff.x, eff.y / fy).normalize().multiplyScalar(this.launchSpeed * power);
+        const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull (visual dir)
+        const vel = this._groundDir(eff.x, eff.y).multiplyScalar(this.launchSpeed * power);
         Stone.spawn({
             arena: this.arena,
             layer: this.warriorsLayer,
@@ -142,8 +177,13 @@ export class StoneLauncher extends Component {
             restitution: this.stoneRestitution,
             friction: this.stoneFriction,
             linearDamping: this.stoneDamping,
+            gemType: this._currentType,
             name: 'LaunchedStone',
         });
+        // advance the queue: NEXT becomes current, draw a new NEXT
+        this._currentType = this._nextType;
+        this._nextType = this._randomType();
+        this._nextRune?.setType(this._nextType);
     }
 
     private _abort(): void { this._aiming = false; this._path = []; this._clearPreview(); if (this.launcherNode) this.launcherNode.angle = 0; }
@@ -160,8 +200,7 @@ export class StoneLauncher extends Component {
         g.clear();
         if (len < this.minDrag) { this._path = []; return; }
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
-        const fy = depthFactor(unprojectY(this.node.position.y)) || 1;
-        const d0 = new Vec2(eff.x, eff.y / fy).normalize();
+        const d0 = this._groundDir(eff.x, eff.y);
         this._path = this._simulate(this._spawnPhysics(), d0.multiplyScalar(this.launchSpeed * power));
         this._drawDots(g, this._path);
     }
@@ -175,7 +214,7 @@ export class StoneLauncher extends Component {
 
     /** Vector from the launcher to the touch, in arena-local (visual) space. */
     private _pull(uiX: number, uiY: number): Vec2 {
-        const lp = this.node.position;                 // launcher (Crossbow) is a child of Arena → arena-local
+        const lp = this.node.position;                 // launcher (StoneLauncher) is a child of Arena → arena-local
         const ut = this.arena?.getComponent(UITransform);
         if (!ut) return new Vec2(uiX - lp.x, uiY - lp.y);
         _tmp.set(uiX, uiY, 0);
@@ -186,7 +225,20 @@ export class StoneLauncher extends Component {
     /** Spawn point in physics (ground) space, de-projected from the launcher's visual position. */
     private _spawnPhysics(): Vec2 {
         const lp = this.node.position;
-        return new Vec2(lp.x, unprojectY(lp.y));
+        return new Vec2(unprojectX(lp.x, lp.y), unprojectY(lp.y));
+    }
+
+    /** Convert a VISUAL aim direction (eff) into the matching GROUND velocity direction, by
+     *  un-projecting two visual points near the launcher and differencing (local Jacobian of the
+     *  inverse map). Needed because the homography couples X and Y — a visual direction has no
+     *  per-axis ground factor. Runs per shot/aim, not per frame. */
+    private _groundDir(effX: number, effY: number): Vec2 {
+        const lp = this.node.position, EPS = 20;
+        const gx0 = unprojectX(lp.x, lp.y), gy0 = unprojectY(lp.y);
+        const gx1 = unprojectX(lp.x + effX * EPS, lp.y + effY * EPS), gy1 = unprojectY(lp.y + effY * EPS);
+        const dx = gx1 - gx0, dy = gy1 - gy0;
+        if (dx * dx + dy * dy < 1e-6) return new Vec2(effX, effY).normalize();   // degenerate (launcher in the clamped band) → fall back to the visual dir
+        return new Vec2(dx, dy).normalize();
     }
 
     /** Clamp a desired shot direction (visual, unit) into the ±110° cone from straight up. */
@@ -264,17 +316,17 @@ export class StoneLauncher extends Component {
 
     /**
      * Draw the trajectory as marching dots. Walks the flat physics polyline, projecting each
-     * point to visual space INLINE (projectY) — no per-frame array allocation — and draws each
-     * dot as an ellipse whose vertical semi-axis follows depthFactor at that depth, so the
-     * dots foreshorten exactly like the launched stone. Allocation-free hot path (this runs
+     * point to visual space INLINE (projectX/projectY) — no per-frame array allocation — and draws
+     * each dot as a FLAT ground disc (semi-axes dotR·sizeXFactor × that·0.5 ground-tilt) so the
+     * dots shrink with depth and read as lying on the floor. Allocation-free hot path (this runs
      * every frame while aiming): one reused Color, only its alpha changes.
      */
     private _drawDots(g: Graphics, physPts: Vec2[]): void {
         const n = physPts.length;
         if (n < 2) return;
-        let total = 0, pvx = physPts[0].x, pvy = projectY(physPts[0].y);
+        let total = 0, pvx = projectX(physPts[0].x, physPts[0].y), pvy = projectY(physPts[0].y);
         for (let i = 1; i < n; i++) {
-            const vx = physPts[i].x, vy = projectY(physPts[i].y);
+            const vx = projectX(physPts[i].x, physPts[i].y), vy = projectY(physPts[i].y);
             total += Math.hypot(vx - pvx, vy - pvy);
             pvx = vx; pvy = vy;
         }
@@ -282,9 +334,9 @@ export class StoneLauncher extends Component {
         const step = 30, dotR = 8;
         const col = this._dotColor;                 // reused; only alpha changes per dot
         let phase = this._trajPhase, cum = 0;
-        let fpy = physPts[0].y, fvx = physPts[0].x, fvy = projectY(fpy);
+        let fpy = physPts[0].y, fvx = projectX(physPts[0].x, fpy), fvy = projectY(fpy);
         for (let i = 1; i < n; i++) {
-            const tpy = physPts[i].y, tvx = physPts[i].x, tvy = projectY(tpy);
+            const tpy = physPts[i].y, tvx = projectX(physPts[i].x, tpy), tvy = projectY(tpy);
             const ex = tvx - fvx, ey = tvy - fvy;
             const segLen = Math.hypot(ex, ey);
             if (segLen >= 0.001) {
@@ -294,8 +346,9 @@ export class StoneLauncher extends Component {
                     const t = dist / segLen;
                     col.a = Math.round(200 * (1 - (cum + dist) / total));
                     g.fillColor = col;
-                    const f = depthFactor(fpy + (tpy - fpy) * t);
-                    g.ellipse(fvx + ux * dist, fvy + uy * dist, dotR, dotR * f);
+                    const py = fpy + (tpy - fpy) * t;   // depth at this dot
+                    const rx = dotR * sizeXFactor(py);  // shrink with depth; 0.5 = ground tilt → flat disc
+                    g.ellipse(fvx + ux * dist, fvy + uy * dist, rx, rx * 0.5);
                     g.fill();
                     dist += step;
                 }

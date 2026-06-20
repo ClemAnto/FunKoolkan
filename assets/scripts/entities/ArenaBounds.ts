@@ -1,5 +1,5 @@
 import { _decorator, Component, Node, Vec2, RigidBody2D, ERigidBody2DType, PolygonCollider2D, CCFloat, CCInteger, Graphics, Color } from 'cc';
-import { projectY, unprojectY, configurePerspective } from '../config/Perspective';
+import { projectX, projectY, unprojectY, configurePerspective, physicsDepth } from '../config/Perspective';
 import { FitScale } from '../ui/FitScale';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
@@ -12,11 +12,11 @@ const { ccclass, property, disallowMultiple, menu } = _decorator;
  * wall quads (PolygonCollider2D) traced along the inner edge of the rim: 4 straight
  * sides + 4 rounded corners, each corner approximated by up to 3 chord segments.
  *
- * PERSPECTIVE: physics lives in a flat GROUND space. The rim is authored in IMAGE space
- * (the 558x445 footprint you see) and its Y is DE-PROJECTED here (unprojectY), so a rune —
- * whose sprite is mapped back with projectY — bounces exactly on the visible rim. Consequence:
- * the debug-draw boundary (image space) does not match the taller ground-space walls; that is
- * correct (physics space ≠ visual space).
+ * PERSPECTIVE (model B): physics lives in a flat GROUND space. The rim is built DIRECTLY in
+ * ground space (x in [-W/2, W/2], y in [0, D = physicsDepth() = H/sFar]) and the walls ARE those
+ * ground points. Rendering PROJECTS the rim FORWARD (projectX/projectY) into the visible TRAPEZOID
+ * — so a rune (also projected) bounces exactly on the visible rim. The debug overlay draws the
+ * same projected rim, so it must land on the painted arena floor.
  *
  * Place this on the Arena node (or a child of it): the wall children inherit the uniform
  * FitScale, so circle colliders stay circular and the boundary adapts to the screen.
@@ -34,16 +34,16 @@ export class ArenaBounds extends Component {
     @property({ type: CCFloat, tooltip: 'Footprint height (px). 0 = read from the active FitScale design size.' })
     footprintHeight = 0;
 
-    @property({ type: CCFloat, tooltip: 'Inner rim inset from the LEFT footprint edge (px, image space).' })
+    @property({ type: CCFloat, tooltip: 'Left margin, VISUAL px at the bottom edge (X is 1:1 at the near edge; converges upward).' })
     insetLeft = 24;
-    @property({ type: CCFloat, tooltip: 'Inner rim inset from the RIGHT footprint edge (px, image space).' })
+    @property({ type: CCFloat, tooltip: 'Right margin, VISUAL px at the bottom edge (X is 1:1 at the near edge; converges upward).' })
     insetRight = 24;
-    @property({ type: CCFloat, tooltip: 'Inner rim inset from the TOP footprint edge (px, image space).' })
+    @property({ type: CCFloat, tooltip: 'Top margin from the TOP screen edge, VISUAL px (mapped to ground via unprojectY). Increase to lower the top.' })
     insetTop = 24;
-    @property({ type: CCFloat, tooltip: 'Inner rim inset from the BOTTOM footprint edge (px, image space).' })
+    @property({ type: CCFloat, tooltip: 'Bottom margin from the BOTTOM screen edge, VISUAL px (mapped to ground via unprojectY).' })
     insetBottom = 24;
 
-    @property({ type: CCFloat, tooltip: 'Corner radius (px, image space).' })
+    @property({ type: CCFloat, tooltip: 'Corner radius (ground-space px; the visible radius foreshortens with depth).' })
     cornerRadius = 48;
     @property({ type: CCInteger, slide: true, range: [1, 3, 1], tooltip: 'Straight segments approximating each rounded corner (max 3).' })
     cornerSegments = 3;
@@ -55,7 +55,7 @@ export class ArenaBounds extends Component {
     @property({ type: CCFloat, slide: true, range: [0, 1, 0.01], tooltip: 'Wall friction.' })
     friction = 0.1;
 
-    @property({ tooltip: 'Draw the boundary outline in IMAGE space (traces the rim on the visible arena) for tuning. Debug only.' })
+    @property({ tooltip: 'Draw the ground walls projected forward (traces the rim on the visible arena floor) for tuning. Debug only.' })
     showDebugOutline = false;
 
     private _walls: Node[] = [];
@@ -85,40 +85,41 @@ export class ArenaBounds extends Component {
         const H = this.footprintHeight > 0 ? this.footprintHeight : (FitScale.instance?.designSize.height ?? 0);
         if (W <= 0 || H <= 0) { console.warn('[ArenaBounds] no footprint — set footprintWidth/Height or add a FitScale'); return; }
 
-        configurePerspective(H);   // ground-Y depth map keyed to this footprint height
-        // Inner rim rect in IMAGE space (arena-local, anchor bottom-centre: x in [-W/2, W/2], y in [0, H]).
+        configurePerspective(W, H);   // 1-point perspective keyed to this footprint
+        const D = physicsDepth();
+        // Inner rim rect in GROUND space (flat playfield; anchor bottom-centre: x in [-W/2,W/2],
+        // y in [0,D]). Projected by the forward map it becomes the visible TRAPEZOID matching the
+        // perspective floor; the physics walls ARE this rect directly (physics is flat ground space).
         const L = -W / 2 + this.insetLeft;
         const R =  W / 2 - this.insetRight;
-        const B = this.insetBottom;
-        const T = H - this.insetTop;
+        const B = unprojectY(this.insetBottom);    // VISUAL margin from the bottom screen edge → ground
+        const T = unprojectY(H - this.insetTop);   // VISUAL margin from the top screen edge → ground
         if (R <= L || T <= B) { console.warn('[ArenaBounds] insets too large for the footprint'); return; }
 
         const r = Math.max(0, Math.min(this.cornerRadius, (R - L) / 2, (T - B) / 2));
         const n = Math.max(1, Math.min(3, Math.round(this.cornerSegments)));
 
-        // Ordered inner-rim boundary points in IMAGE space, CCW.
-        const img: Vec2[] = [];
+        // Ordered inner-rim boundary points in GROUND space, CCW.
+        const ground: Vec2[] = [];
         const arc = (cx: number, cy: number, a0: number, a1: number) => {
             for (let i = 0; i <= n; i++) {
                 const a = (a0 + (a1 - a0) * i / n) * Math.PI / 180;
-                img.push(new Vec2(cx + r * Math.cos(a), cy + r * Math.sin(a)));
+                ground.push(new Vec2(cx + r * Math.cos(a), cy + r * Math.sin(a)));
             }
         };
-        arc(R - r, B + r, -90,   0);  // bottom-right corner
-        arc(R - r, T - r,   0,  90);  // top-right corner
-        arc(L + r, T - r,  90, 180);  // top-left corner
-        arc(L + r, B + r, 180, 270);  // bottom-left corner
+        arc(R - r, B + r, -90,   0);  // bottom-right (near) corner
+        arc(R - r, T - r,   0,  90);  // top-right (far) corner
+        arc(L + r, T - r,  90, 180);  // top-left (far) corner
+        arc(L + r, B + r, 180, 270);  // bottom-left (near) corner
 
-        // Expose the boundary loop (image + de-projected ground space) for the launcher's trajectory.
-        this._boundaryImg  = img.map(p => p.clone());
-        this._boundaryPhys = img.map(p => new Vec2(p.x, unprojectY(p.y)));
+        // Walls = the ground rim directly. Expose it (ground) for the launcher trajectory, plus the
+        // projected visible trapezoid (image) for overlays.
+        this._boundaryPhys = ground.map(p => p.clone());
+        this._boundaryImg  = ground.map(p => new Vec2(projectX(p.x, p.y), projectY(p.y)));
 
-        // Physics walls: same boundary with Y DE-PROJECTED into ground space (unprojectY),
-        // so runes (drawn back via projectY) bounce exactly on the visible rim.
         const t = this.wallThickness;
-        for (let i = 0; i < img.length; i++) {
-            const p0 = new Vec2(img[i].x,                 unprojectY(img[i].y));
-            const p1 = new Vec2(img[(i + 1) % img.length].x, unprojectY(img[(i + 1) % img.length].y));
+        for (let i = 0; i < ground.length; i++) {
+            const p0 = ground[i], p1 = ground[(i + 1) % ground.length];
             let dx = p1.x - p0.x, dy = p1.y - p0.y;
             const len = Math.hypot(dx, dy);
             if (len < 0.001) continue;               // skip degenerate joins
@@ -137,10 +138,9 @@ export class ArenaBounds extends Component {
         if (this.showDebugOutline) this._drawOutline();
     }
 
-    /** Draw the real physics boundary (ground space) projected back through projectY, so the
-     *  cyan overlay must land exactly on the painted rim. If the de-projection (unprojectY) were
-     *  wrong, projectY(unprojectY(rim)) ≠ rim and the mismatch would be visible — a far better
-     *  tuning aid than drawing the raw image rim (which can never reveal a de-projection bug). */
+    /** Draw the real physics walls (ground space) projected FORWARD (projectX/projectY), so the
+     *  cyan overlay must land exactly on the painted arena floor — a forward-projection sanity
+     *  check. If the projection is mis-calibrated (wrong sFar), the overlay won't match the art. */
     private _drawOutline(): void {
         const b = this._boundaryPhys;
         if (b.length < 2) return;
@@ -151,8 +151,8 @@ export class ArenaBounds extends Component {
         const g = node.addComponent(Graphics);
         g.lineWidth = 3;
         g.strokeColor = new Color(0, 255, 255, 220);
-        g.moveTo(b[0].x, projectY(b[0].y));
-        for (let i = 1; i < b.length; i++) g.lineTo(b[i].x, projectY(b[i].y));
+        g.moveTo(projectX(b[0].x, b[0].y), projectY(b[0].y));
+        for (let i = 1; i < b.length; i++) g.lineTo(projectX(b[i].x, b[i].y), projectY(b[i].y));
         g.close();
         g.stroke();
         this._walls.push(node);

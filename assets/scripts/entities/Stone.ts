@@ -1,5 +1,5 @@
-import { _decorator, Component, Node, Vec2, Vec3, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate } from 'cc';
-import { projectY, depthFactor } from '../config/Perspective';
+import { _decorator, Component, Node, Vec2, Vec3, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate, Graphics, Color } from 'cc';
+import { projectX, projectY, sizeXFactor, sizeYFactor } from '../config/Perspective';
 import { Rune } from './Rune';
 
 const { ccclass } = _decorator;
@@ -10,9 +10,9 @@ const _v = new Vec3();
  *
  * The body lives in the arena's flat GROUND space and ROTATES (warrior physics). The view is
  * a separate node (NOT a child of the body, so it never inherits the body's rotation): each
- * frame this copies the body's POSITION to the view via projectY (the mild perspective
- * foreshorten), matches the arena's uniform fit-scale, and squashes the view's vertical axis
- * by depthFactor so the disc reads as an ellipse on the tilted ground.
+ * frame this maps the body's POSITION via the 1-point projection (projectX — X converges —
+ * and projectY — non-linear Y), matches the arena's uniform fit-scale, and shrinks the view
+ * with depth via sizeXFactor (X) and sizeYFactor (Y) so far runes are genuinely smaller.
  */
 @ccclass('Stone')
 export class Stone extends Component {
@@ -24,25 +24,81 @@ export class Stone extends Component {
     viewScale = 1;
     /** Inner view node that mirrors the body's rotation (the prefab's "rotation" node). */
     rotationNode: Node | null = null;
+    /** Physics collider radius (ground px) — used by the debug draw. */
+    radius = 0;
+
+    /** Debug overlay toggle (set by StoneLauncher.debugStones): a flat ellipse + rotation radius per stone. */
+    static debugDraw = false;
+    private _dbg: Graphics | null = null;
+    /** Shared debug layer (above WarriorsLayer) so the debug renders ON TOP of the stones. */
+    private static _dbgLayer: Node | null = null;
 
     lateUpdate(): void {
         const view = this.viewNode, arena = this.arena;
         if (!view?.isValid || !arena?.isValid) return;
         const p = this.node.position;                  // arena-local ground point (body is a direct child of arena)
-        _v.set(p.x, projectY(p.y), p.z);               // perspective foreshorten of depth (position; X 1:1)
-        Vec3.transformMat4(_v, _v, arena.worldMatrix); // arena-local → world
+        _v.set(projectX(p.x, p.y), projectY(p.y), p.z); // 1-point perspective: X converges, Y non-linear
+        Vec3.transformMat4(_v, _v, arena.worldMatrix);  // arena-local → world
         view.setWorldPosition(_v);
-        // Draw the ground disc as an ELLIPSE: full width, vertical semi-axis × depthFactor (the
-        // projection slope), so the sprite silhouette matches where the physics circle is.
-        const ws = arena.worldScale, s = this.viewScale, f = depthFactor(p.y);
-        view.setWorldScale(ws.x * s, ws.y * s * f, 1);
+        // Shrink with depth in BOTH axes (sizeX = s, sizeY = s·vy), so a far rune is genuinely
+        // smaller, the silhouette tracking the projected ground circle.
+        const ws = arena.worldScale, s = this.viewScale;
+        view.setWorldScale(ws.x * s * sizeXFactor(p.y), ws.y * s * sizeYFactor(p.y), 1);
         // Mirror the physics body's spin onto the designated inner node (base stays upright).
         if (this.rotationNode?.isValid) this.rotationNode.angle = this.node.angle;
+        if (Stone.debugDraw) this._drawDebug(p);
+        else if (this._dbg?.isValid) this._dbg.clear();
+    }
+
+    /** Lazily create a shared debug layer as the LAST child of the arena's parent (above
+     *  WarriorsLayer → on top of the stones), mirroring the arena's transform so arena-local draw
+     *  coords still map correctly. Debug only. */
+    private _debugLayer(): Node | null {
+        const arena = this.arena, world = arena?.parent;
+        if (!arena?.isValid || !world?.isValid) return null;
+        let layer = Stone._dbgLayer;
+        if (!layer?.isValid) {
+            layer = new Node('__StonesDebugLayer');
+            layer.layer = arena.layer;
+            layer.setParent(world);
+            layer.setSiblingIndex(world.children.length - 1);   // above WarriorsLayer
+            Stone._dbgLayer = layer;
+        }
+        layer.setPosition(arena.position);   // mirror Arena (position + scale) so arena-local coords map
+        layer.setScale(arena.scale);
+        return layer;
+    }
+
+    /** Debug only: a flat ground-disc ellipse (vertical axis squashed by the ground tilt) plus a
+     *  radius line from the centre to the rim, rotated with the body — shows position + spin. */
+    private _drawDebug(p: Readonly<Vec3>): void {
+        const parent = this._debugLayer();
+        if (!parent) return;
+        if (!this._dbg?.isValid) {
+            const n = new Node('StoneDebug');
+            n.layer = parent.layer;
+            n.setParent(parent);
+            n.setPosition(0, 0, 0);
+            this._dbg = n.addComponent(Graphics);
+            this._dbg.lineWidth = 3;
+            this._dbg.strokeColor = new Color(255, 90, 90, 235);
+        }
+        const g = this._dbg, r = this.radius;
+        const cx = projectX(p.x, p.y), cy = projectY(p.y);
+        const rx = r * sizeXFactor(p.y), ry = rx * 0.5;   // 0.5 = ground tilt → flat disc on the floor
+        const th = this.node.angle * Math.PI / 180;
+        g.clear();
+        g.ellipse(cx, cy, rx, ry);
+        g.moveTo(cx, cy);
+        g.lineTo(cx - rx * Math.sin(th), cy + ry * Math.cos(th));   // radius on the flat ellipse → rotation
+        g.stroke();
     }
 
     onDestroy(): void {
         if (this.viewNode?.isValid) this.viewNode.destroy();
         this.viewNode = null;
+        if (this._dbg?.isValid) this._dbg.node.destroy();
+        this._dbg = null;
     }
 
     /**
@@ -62,6 +118,7 @@ export class Stone extends Component {
         linearDamping?: number;
         angularDamping?: number;
         viewScale?: number;
+        gemType?: number;     // gem type to show on the rune (Rune.setType)
         name?: string;
     }): Node {
         const body = new Node(o.name ?? 'Stone');
@@ -96,7 +153,10 @@ export class Stone extends Component {
             stone.viewNode = view;
             stone.arena = o.arena;
             stone.viewScale = o.viewScale ?? 1;
-            stone.rotationNode = view.getComponent(Rune)?.rotationNode ?? null;   // spins with the body
+            stone.radius = o.radius;
+            const rune = view.getComponent(Rune);
+            stone.rotationNode = rune?.rotationNode ?? null;          // spins with the body
+            if (rune && o.gemType !== undefined) rune.setType(o.gemType);   // gem colour
         }
         return body;
     }

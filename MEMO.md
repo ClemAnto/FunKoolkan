@@ -1,11 +1,49 @@
-# MEMO — Note tecniche FunWarriors
+# MEMO — Note tecniche FunKoolkan (fork di FunWarriors)
 
-> Note di implementazione, gotcha, decisioni di tuning e parametri calibrati. Da consultare all'inizio di ogni sessione di sviluppo.
+> Note di implementazione, gotcha, decisioni di tuning e parametri calibrati. Da consultare all'inizio di ogni sessione. **NB:** sotto la sezione FunKoolkan, il resto è ancora il MEMO ereditato da FunWarriors (warrior/merge/powerup) — riferimento storico, non più il gameplay attivo.
+
+---
+
+## FunKoolkan — Prospettiva (modello B) + Launcher  *(2026-06-21)*
+
+**Modello prospettico = B (vera prospettiva 1-punto).** Fisica PIATTA in ground space, render = omografia proiettiva. Tutto in `assets/scripts/config/Perspective.ts`:
+- Knob: `PERSPECTIVE_FAR_SCALE` (sFar, **0.58** — rapporto larghezza bordo-lontano/vicino, più basso = più convergenza X) e `PERSPECTIVE_Y_FORESHORTEN` (**0.5** — squash verticale extra delle rune).
+- `configurePerspective(W,H)`: `a=1/sFar−1`, `Yhor=H/(1−sFar)`, `D=H/sFar` (profondità ground), `invD=1/D`. Chiamato da `FitScale.onLoad` + `ArenaBounds.rebuild`.
+- `depthScale(yp)=1/(1+a·clamp(yp/D))`; `projectX=xp·s`; `projectY=Yhor·(1−s)`; `sizeXFactor=s`; `sizeYFactor=s·(1−Yforeshorten·(1−s))`; `unprojectX/unprojectY` = inverse (guard clamp su sFar/1, no NaN).
+- **Ground space**: i corpi Box2D vivono in `[−W/2,W/2]×[0,D]`. `ArenaBounds` costruisce il rim **direttamente in ground space**; i muri SONO quei punti (niente de-proiezione); `boundaryPhysics` = rim ground; debug + `boundaryImage` = rim **proiettato avanti** (projectX/projectY) → trapezio visibile.
+
+**Stone** (`entities/Stone.ts`): posizione via projectX/projectY; scala vista `(ws·vs·sizeX, ws·vs·sizeY)` (anisotropa); corpo ruota (`fixedRotation=false`); `rotationNode.angle = this.node.angle` (1 riga, copia diretta del corpo → nodo `Rune>gem>rotation`).
+
+**StoneLauncher** (`entities/StoneLauncher.ts`): slingshot **ancorato al nodo launcher** (spawn + traiettoria + direzione derivati dalla sua posizione). Spawn = `unprojectX/Y(launcher pos)`; velocità via `_groundDir(eff)` (Jacobian dell'inversa con passo ε, perché l'omografia accoppia X/Y); traiettoria simulata in ground space su `boundaryPhysics` inset di `stoneRadius`; pallini disegnati **piatti** (ellisse 0.5 ground-tilt).
+
+### Valori calibrati (in scena, salvo nota)
+| Param | Valore | Dove |
+|------|--------|------|
+| `launchSpeed` | 150 | StoneLauncher |
+| `minDrag` / `maxDrag` | 12 / 300 | forza min dimezzata (era 24); arena-local |
+| `MAX_AIM_ANGLE` | **67.5°** (±75% verso l'orizzontale) | StoneLauncher.ts (cost.) |
+| `bowFollowFactor` | 0.5 | StoneLauncher |
+| `stoneRadius` / `stoneViewScale` | **31.6 / 0.575** | scalati insieme ×1.15 → restano coerenti (rapporto ~0.0182) |
+| stone `restitution`/`friction`/`damping` | 0.04 / 0.3 / 0.5 | warrior-like |
+| ArenaBounds `insetTop`/`insetBottom` | 30 / 36 | **px VISIVI** dal bordo schermo (mappati con unprojectY) |
+| ArenaBounds `insetLeft`/`insetRight` | 21 / 21 | px al bordo basso (ground X) |
+| ArenaBounds `cornerRadius` | 72 | ground px |
+| ArenaBounds `wallThickness` | 18 | |
+| muri `restitution`/`friction` | 0.4 / 0.1 | |
+
+### Gotcha (questa sessione)
+- **Rotazione gemma "strana" = SHEAR**: il nodo `rotation` è figlio di scale ANISOTROPE (`gem.scale.y=0.5` nel prefab **+** la `sizeYFactor` del modello B). Una rotazione dentro scala non uniforme viene renderizzata sheared (la copia dell'angolo è giusta, è il motore). Una rotazione rigida richiede scala **uniforme** sugli antenati → conflitto col foreshorten. **Decisione di design APERTA**: (A) arte gemma piatta/radiale, (B) split base-squashata + gemma-uniforme, (C) niente rotazione. (Anchor tutti 0.5/0.5 → non è pivot.)
+- **`view.getVisibleSize()` in CC3.8 NON ha overload out-param**: passarne uno lo ignora e il buffer resta (0,0) → arena scalata a ~0 (sparisce con Background, che è figlio di Arena). Usare il valore di ritorno.
+- **Box2D debug nativo**: disegna i collider cerchio SENZA linea raggio/angolo → la rotazione non si vede. Usare l'overlay `StoneDebug` (`StoneLauncher.debugStones=true`) che disegna ellisse + raggio rotante.
+- **Rename**: nodi scena `Crossbow→StoneLauncher`, `CrossbowBase→StoneLauncherBase`, `CrossbowLauncher→StoneLauncherArm`. `InputController.ts` (legacy, inerte) fa ancora `getChildByName('Crossbow')` → warning innocuo + resta disabilitato. **Da ritirare.**
+
+### NEXT (ripristinato, da cablare in editor)
+Tipo gemma casuale a ogni lancio (`numGemTypes=2`) + anteprima del prossimo (coda current→next). Richiede in editor: `StoneLauncher.nextPreview` → nodo **NextPreview** (riattivarlo), e `Rune.gems` = [gem_green(0), gem_yellow(1)].
 
 ---
 
 
-## Parametri fisici calibrati
+## Parametri fisici calibrati  *(FunWarriors — storico)*
 
 Tutti i valori sono stati tuned in sessione di gioco reale — non modificare senza testare.
 

@@ -21,10 +21,10 @@ const { ccclass, property, executeInEditMode, requireComponent, disallowMultiple
  * Everything parented under the arena (Box2D borders, sprite layer) inherits this
  * transform — "tutto segue l'arena" comes for free.
  *
- * The perspective squash is NOT done here: this fit-scale stays a UNIFORM scale. This
- * component only calls configurePerspective(designHeight) in onLoad to key the depth map to
- * the arena footprint; the foreshorten itself lives in Stone.lateUpdate (projectY for the
- * position, depthFactor for the vertical ellipse), which this uniform scale sits above.
+ * The perspective is NOT done here: this fit-scale stays a UNIFORM scale. This component only
+ * calls configurePerspective(designWidth, designHeight) in onLoad to key the projection to the
+ * arena footprint; the projection itself lives in Stone.lateUpdate (projectX/projectY for the
+ * position, sizeXFactor/sizeYFactor for the depth-shrunk size), which this uniform scale sits above.
  *
  * Scene requirements:
  *  - anchor = (0.5, 0)  → bottom-centre pivot; the arena grows upward.
@@ -76,7 +76,7 @@ export class FitScale extends Component {
             this.designWidth  > 0 ? this.designWidth  : ut.contentSize.width,
             this.designHeight > 0 ? this.designHeight : ut.contentSize.height,
         );
-        configurePerspective(this._design.height);   // ground-Y depth map keyed to the footprint
+        configurePerspective(this._design.width, this._design.height);   // perspective keyed to the footprint
     }
 
     onEnable(): void {
