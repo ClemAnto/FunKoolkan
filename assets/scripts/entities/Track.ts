@@ -1,5 +1,5 @@
 import { _decorator, Component, Node, RigidBody2D, ERigidBody2DType, BoxCollider2D, PolygonCollider2D, Size, Vec2, UITransform, view, Graphics, Color, UIOpacity, tween, Tween } from 'cc';
-const { ccclass } = _decorator;
+const { ccclass, property } = _decorator;
 
 // ── Layout — recalculated at startup from actual screen size ─────────────────
 export let LAYOUT_SCALE   = 1.0;   // TRACK_W / 384 — proportional scale factor for all game elements
@@ -69,6 +69,9 @@ export function initLayout(funnelPct?: number): void {
 
 @ccclass('Track')
 export class Track extends Component {
+    @property({ type: Node, tooltip: 'Arena sprite node (dependency assigned explicitly in the editor — never resolved by name).' })
+    arenaSprite: Node | null = null;
+
     private readonly funnelPercentage   = 75;
     private readonly wallThickness      = 12;
     private readonly topWallThickness   = 40;
@@ -82,7 +85,7 @@ export class Track extends Component {
         const vs = view.getVisibleSize();
         initLayout(this.funnelPercentage);
 
-        const spriteNode = this.node.getChildByName('TrackSprite');
+        const spriteNode = this.arenaSprite;
         this._spriteUIT = spriteNode?.getComponent(UITransform) ?? null;
         if (this._spriteUIT) {
             this._spriteUIT.node.on(UITransform.EventType.SIZE_CHANGED,    this.buildWalls, this);
@@ -140,7 +143,7 @@ export class Track extends Component {
         for (const w of this._walls) w.destroy();
         this._walls = [];
 
-        const spriteNode = this.node.getChildByName('TrackSprite');
+        const spriteNode = this.arenaSprite;
         if (!spriteNode) { console.warn('[Track] TrackSprite not found'); return; }
         const uit = spriteNode.getComponent(UITransform);
         if (!uit)  { console.warn('[Track] TrackSprite has no UITransform'); return; }

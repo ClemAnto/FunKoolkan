@@ -1,5 +1,6 @@
 import { _decorator, Component, Node } from 'cc';
 import { TRACK_TOP_Y, TRACK_BOTTOM_Y } from './Track';
+import { PERSPECTIVE_Y_SCALE } from '../config/Perspective';
 const { ccclass } = _decorator;
 
 const SCALE_BOTTOM = 1.2;
@@ -18,7 +19,10 @@ export class PerspectiveMapper extends Component {
     lateUpdate(): void {
         if (!this.viewNode?.isValid) return;
         const wp = this.node.worldPosition;
-        const sy = this.node.parent?.scale.y ?? 1;
+        // Depth foreshortening comes from the global perspective constant, NOT the node
+        // scale: FitScale now applies a uniform scale to the arena, so reading parent.scale.y
+        // would conflate the layout fit with the perspective squash.
+        const sy = PERSPECTIVE_Y_SCALE;
         this.viewNode.setWorldPosition(wp.x, wp.y * sy + this.yOffset + this.bounceY, wp.z);
         const span  = TRACK_TOP_Y - TRACK_BOTTOM_Y;
         const depth = span > 0 ? Math.max(0, Math.min(1, (wp.y - TRACK_BOTTOM_Y) / span)) : 0;

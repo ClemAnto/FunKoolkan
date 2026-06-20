@@ -22,12 +22,21 @@ Progetto Cocos Creator 3.8.8, TypeScript, gioco puzzle-arcade per portali HTML5.
 - **Non modificare via codice** la posizione né la scala di nodi già impostati nell'editor, salvo eccezioni esplicitamente indicate. I valori dell'editor sono autoritativi per layout e proporzioni.
 - Le conversioni world → local devono usare la trasformata reale del nodo (`worldPosition` / `worldScale`), non costanti hardcoded.
 
+## Niente disegno programmatico (regola ferrea)
+- **Ogni elemento visivo — UI *e* gameplay (rune, moai, bombe, scudo, arena, VFX) — è un prefab autorato nell'editor.** Lo script attacca solo comportamento (stato, fisica, tween, animazioni); non costruisce gerarchie visive.
+- **Vietato `Graphics`** e la costruzione/configurazione da codice di nodi visivi (`Sprite`, `Label`, `UITransform`, `addComponent` di render) per disegnare contenuto. Cocos è editor-first: questa regola è più stretta del progetto precedente, di proposito. **`Graphics` ammesso SOLO per test/debug** (es. visualizzare hitbox, path, gizmo temporanei): mai in contenuto di gioco shippato.
+- **Spawn runtime** → `instantiate(prefab)` + **object pooling** (`NodePool`), mai costruzione manuale del nodo.
+- **Lecito da codice** sulle *istanze* spawnate: posizione, scala, rotazione, opacità, animazioni, tween, fisica. Resta invariato il vincolo che i **nodi già in scena dall'editor** non si toccano in posizione/scala (sezione sopra).
+- **Eccezioni ammesse** (solo queste, e restano prefab-based): `ParticleSystem2D` autorato nell'editor; **Sprite con texture tiled/sliced** stirato/ruotato per connessioni dinamiche (es. la catena di mana Alba↔Tramonto); prefab-segmento istanziato N volte lungo un path. Niente `Graphics` nemmeno qui.
+- Coerente con: niente VFX via `Graphics` (`UIOpacity` non funziona su `Graphics`), una classe per effetto, un solo prefab per componenti reiterati.
+
 ## Convenzioni di codice
 - Component classes in PascalCase
 - File scripts: PascalCase.ts (es. GameManager.ts)
 - Cartelle: lowercase (managers/, entities/, utils/)
 - Decoratori @ccclass con stesso nome della classe
 - Log (console.log/warn/error) sempre in inglese
+- **Dipendenze tra nodi/componenti**: SEMPRE via `@property` (target) assegnata **esplicitamente nell'editor**, MAI `getChildByName`/lookup per nome. Il nome di un nodo non è un contratto: rinominarlo non deve rompere il codice. (Lo stesso vale per i parametri configurabili: `@property`, non costanti hardcoded nel codice di scena.)
 
 ## Remote control
 Se la chat è aperta da qualche minuto (sessione di sviluppo attiva), avvia automaticamente il remote-control così possiamo continuare la conversazione tramite app
@@ -40,15 +49,19 @@ Se la chat è aperta da qualche minuto (sessione di sviluppo attiva), avvia auto
 Quando l'utente scrive **"OK Chiudo"** (o varianti come "Ok chiudo"), significa che sta per cambiare chat. Aggiornare immediatamente tutti gli `.md` rilevanti con quanto scoperto/cambiato nella sessione corrente prima di rispondere.
 
 ## Stato attuale
-Fase 0 — Bootstrap (v0.1.0). Progetto appena forkato da FunWarriors (2026-06-19).
+Fase 0 — **Design definito** (v0.1.0, 2026-06-20). Forkato da FunWarriors il 2026-06-19; nella sessione 06-19/20 il **game design è stato rifondato** (vedi `GDD.md` v0.3). Codice ancora invariato (è quello FunWarriors).
+
+**Design (in `GDD.md` v0.3):** tema **Rapa Nui/moai** (NON maya), stile **cartoon** (Mario/Puzzle Bobble), fondo blu-grigio-scuro. **Niente merge.** Core = **circuito di mana**: si lanciano **rune rotonde con gemma colorata**; una catena monocromatica che collega i moai-polo **Alba/Tramonto** chiude il circuito → **scarica** che dissolve la catena e **rompe lo scudo a lastre** del boss **Koolkan** (moai colossale corrotto); scudo rotto → runa a traiettoria libera lo abbatte → **round up**. Bombe dall'idolo **Make-make** (a raggio / di-colore); **moai-spawner** = pressione; **overflow = game over**. Due deep-research (06-19/20): rischio rifiuto originalità sceso a **basso-medio, guidato dalla presentazione**.
 
 **Cosa è già pronto (ereditato da FunWarriors):** gameplay completo (merge + lancio), HUD, pannelli end-game, powerup, audio/VFX/juice, onboarding in-gameplay, rework resize/fullscreen, e **integrazione portali completa** — adapter Poki/CrazyGames/**GameDistribution** (`PortalAdapter`), leaderboard riutilizzabile, script `pack:crazygames`/`pack:gamedistribution`, overlay rotate. Dettagli tecnici in MEMO/TECH/COCOS.
 
 **Reset di fork già applicati:** `package.json` (name/version/uuid), `VERSION=0.1.0`, `GD gameId`→placeholder, `LeaderboardConfig.BACKEND='mock'` (niente Firebase finché non se ne crea uno nuovo per FunKoolkan), rimossi `submission/`/`CRAZYGAMES.md`/`GAMEDISTRIBUTION.md` (storia FunWarriors).
 
 **Da fare (prossimi passi):**
-- **Reskin maya**: sostituire sprite/sfondi/HUD a tema (Kukulkan, piramidi, giada); riscrivere `GDD.md`/`ROADMAP.md` per il nuovo design.
-- **Dinamiche di gioco**: definire e implementare le meccaniche che cambiano rispetto a FunWarriors (da specificare).
+- **Chiudere i TBD di design** (GDD §22): n° colori + scaling, n°/ritmo dei moai-spawner, tipi di bomba, formula punteggio, prefill iniziale.
+- **Riscrivere `ROADMAP.md`** col nuovo piano per fasi (l'attuale è quella FunWarriors merge-based, obsoleta — vedi nota in cima al file).
+- **Prototipo greybox del core** (conduzione + magnetismo + poli fissi) per validare il feel — riuso del contact-graph del merge → flood-fill monocromatico.
+- **Reskin asset**: rune-gemma tonde, moai (poli Alba/Tramonto, spawner, boss Koolkan, idolo Make-make), arena/ahu, HUD scudo.
 - Quando serve la leaderboard online: creare un **nuovo progetto Firebase** e impostare `LeaderboardConfig` (chiavi + `BACKEND='firestore'`).
 - Per i portali: registrare il gioco su GD/altri e impostare il relativo `gameId`.
 

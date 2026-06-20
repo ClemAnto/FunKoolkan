@@ -34,7 +34,7 @@ const { ccclass, property } = _decorator;
  *  (off on GameDistribution per §7). Gates end-game routing + name-entry prep. */
 const LEADERBOARD_ENABLED = LEADERBOARD_CONFIG_ENABLED && LEADERBOARD_ALLOWED;
 
-export const VERSION     = '0.1.0';
+export const VERSION     = '0.1.1';
 /** Dedicated leaderboard scene; the game-over flow hands the score off to it. */
 const RANKING_SCENE      = 'Ranking';
 /** Main menu scene — target of the Menu buttons on the pause/end panels. */
@@ -610,11 +610,11 @@ export class GameManager extends Component implements IGameManagerDebug {
         this.vfx.preloadSparkle();
 
         // Track.start() ran before this (higher in hierarchy) with wrong viewport — rebuild walls now
-        this.track = this.worldNode.getChildByName('Track')?.getComponent(Track) ?? null;
+        this.track = this.worldNode.getChildByName('Arena')?.getComponent(Track) ?? null;
         if (this.track) this.track.showDebugLine = DEBUG_ENGINE;
         this.track?.relayout();
         this.nextPreviewNode = this.track?.node.getChildByName('NextPreview') ?? null;
-        this._endlineNode = this.track?.node.getChildByName('TrackSprite')?.getChildByName('GameOverLine') ?? null;
+        this._endlineNode = this.track?.arenaSprite?.getChildByName('GameOverLine') ?? null;
         this._wireGoLineVisual();
         this._syncGoLineWhenStable(this.currentRound);
 

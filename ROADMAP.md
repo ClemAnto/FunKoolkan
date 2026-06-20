@@ -2,6 +2,8 @@
 
 > Roadmap di sviluppo in Cocos Creator (TypeScript). Stima realistica part-time. Aggiornata 2026-06-10 (v0.8.56).
 
+> ⚠️ **NOTA FunKoolkan (2026-06-20)**: questa roadmap è quella **ereditata da FunWarriors** (gameplay merge-based) ed è **obsoleta** per FunKoolkan. Il design è stato **rifondato** (tema Rapa Nui/moai, core = circuito di mana, boss Koolkan a scudo, **niente merge**): vedi **`GDD.md` v0.3**. Il piano per fasi va **riscritto** una volta chiuse le decisioni aperte in GDD §22 (n° colori, spawner, tipi-bomba, punteggio, prefill). Le sezioni qui sotto restano valide solo per l'**infrastruttura ereditata** (fisica/lancio, portali, leaderboard, resize/fullscreen).
+
 ## Stack tecnologico
 
 - **Engine**: Cocos Creator 3.8.8
