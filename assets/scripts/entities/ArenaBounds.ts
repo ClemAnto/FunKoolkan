@@ -1,7 +1,6 @@
-import { _decorator, Component, Node, Vec2, RigidBody2D, ERigidBody2DType, PolygonCollider2D, CircleCollider2D, CCFloat, CCInteger, Graphics, Color, Sprite, SpriteFrame, UITransform } from 'cc';
+import { _decorator, Component, Node, Vec2, RigidBody2D, ERigidBody2DType, PolygonCollider2D, CCFloat, CCInteger, Graphics, Color } from 'cc';
 import { PERSPECTIVE_Y_SCALE } from '../config/Perspective';
 import { FitScale } from '../ui/FitScale';
-import { Stone } from './Stone';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
 
@@ -59,28 +58,18 @@ export class ArenaBounds extends Component {
     @property({ tooltip: 'Draw the boundary outline in IMAGE space (traces the rim on the visible arena) for tuning. Debug only.' })
     showDebugOutline = false;
 
-    @property({ tooltip: 'Debug: spawn a fully-elastic ball at the arena centre with a random direction, to evaluate wall bounces (watch with physics debug draw on).' })
-    spawnTestBall = false;
-    @property({ type: CCFloat, tooltip: 'Test ball speed (units/s).' })
-    testBallSpeed = 300;
-    @property({ type: CCInteger, tooltip: 'How many test runes to spawn.' })
-    testBallCount = 1;
-    @property({ type: CCFloat, tooltip: 'Test ball radius (physics px).' })
-    testBallRadius = 22;
-    @property({ type: SpriteFrame, tooltip: 'Sprite drawn for the test ball (the "stone") in warriorsLayer. Assigned in the editor.' })
-    stoneSprite: SpriteFrame | null = null;
-    @property({ type: Node, tooltip: 'WarriorsLayer node where the stone sprite is placed (assigned in the editor).' })
-    warriorsLayer: Node | null = null;
-
     private _walls: Node[] = [];
+    private _boundaryImg: Vec2[] = [];
+    private _boundaryPhys: Vec2[] = [];
 
-    start(): void {
-        this.rebuild();
-        if (this.spawnTestBall) {
-            const n = Math.max(1, Math.round(this.testBallCount));
-            for (let i = 0; i < n; i++) this._spawnTestBall(i, n);
-        }
-    }
+    /** CCW boundary loop in PHYSICS (de-squashed) local space — the exact polyline the wall
+     *  colliders were built on. Empty until rebuild() has run. Consumers reflect off p[i]→p[i+1]
+     *  (loop closes p[last]→p[0]). */
+    get boundaryPhysics(): readonly Vec2[] { return this._boundaryPhys; }
+    /** Same loop in IMAGE (== visible) space, for overlays. */
+    get boundaryImage(): readonly Vec2[] { return this._boundaryImg; }
+
+    start(): void { this.rebuild(); }
     onDestroy(): void { this._clear(); }
 
     private _clear(): void {
@@ -120,6 +109,10 @@ export class ArenaBounds extends Component {
         arc(L + r, T - r,  90, 180);  // top-left corner
         arc(L + r, B + r, 180, 270);  // bottom-left corner
 
+        // Expose the boundary loop (image + de-squashed physics) for the launcher's trajectory.
+        this._boundaryImg  = img.map(p => p.clone());
+        this._boundaryPhys = img.map(p => new Vec2(p.x, p.y / pY));
+
         // Physics walls: same boundary with Y DE-SQUASHED into physics space (÷ pY),
         // so runes (sprite mapped with Y × pY) bounce on the visible rim.
         const t = this.wallThickness;
@@ -158,46 +151,6 @@ export class ArenaBounds extends Component {
         g.close();
         g.stroke();
         this._walls.push(node);
-    }
-
-    private _spawnTestBall(index: number, count: number): void {
-        const H = this.footprintHeight > 0 ? this.footprintHeight : (FitScale.instance?.designSize.height ?? 445);
-        const pY = PERSPECTIVE_Y_SCALE || 1;
-        const cx = (index - (count - 1) / 2) * this.testBallRadius * 4;   // spread the runes horizontally
-        const ball = new Node('TestBall_' + index);
-        ball.layer = this.node.layer;
-        ball.setParent(this.node);
-        ball.setPosition(cx, (H / 2) / pY, 0);   // arena centre row, de-squashed into physics space
-        const rb = ball.addComponent(RigidBody2D);
-        rb.type = ERigidBody2DType.Dynamic;
-        rb.gravityScale = 0;
-        rb.linearDamping = 0;
-        rb.angularDamping = 0;
-        rb.fixedRotation = true;
-        rb.bullet = true;                        // CCD so a fast ball can't tunnel through thin walls
-        const col = ball.addComponent(CircleCollider2D);
-        col.radius = this.testBallRadius;
-        col.restitution = 1;                     // elastic (mixed with walls -> max)
-        col.friction = 0;
-        col.apply();
-        const a = Math.random() * Math.PI * 2;
-        rb.linearVelocity = new Vec2(Math.cos(a) * this.testBallSpeed, Math.sin(a) * this.testBallSpeed);
-        this._walls.push(ball);                  // tracked for cleanup
-
-        // Linked view sprite in warriorsLayer (perspective-mapped by Stone) to see body↔sprite match.
-        if (this.stoneSprite && this.warriorsLayer) {
-            const view = new Node('StoneView_' + index);
-            view.layer = this.warriorsLayer.layer;
-            view.setParent(this.warriorsLayer);
-            const sp = view.addComponent(Sprite);
-            sp.sizeMode = Sprite.SizeMode.CUSTOM;   // CUSTOM before spriteFrame, else UITransform is overwritten
-            sp.spriteFrame = this.stoneSprite;
-            view.getComponent(UITransform)!.setContentSize(this.testBallRadius * 2.4, this.testBallRadius * 2.4);
-            const stone = ball.addComponent(Stone);
-            stone.viewNode = view;
-            stone.arena = this.node;
-            this._walls.push(view);              // cleaned up with the ball
-        }
     }
 
     private _spawnWall(name: string, points: Vec2[]): void {

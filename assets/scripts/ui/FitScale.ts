@@ -56,6 +56,8 @@ export class FitScale extends Component {
 
     @property({ tooltip: 'Pin the arena bottom edge to the screen bottom (anchor must be 0.5, 0). Off = vertically centred.' })
     anchorToBottom = true;
+    @property({ type: CCFloat, tooltip: 'Extra vertical offset in screen px added to the arena position (positive = up).' })
+    verticalOffset = 0;
     @property({ tooltip: 'Re-apply Box2D colliders under this node when the scale changes (resize), so the physics resync to the new lossy-scale.' })
     reapplyCollidersOnResize = true;
 
@@ -110,8 +112,8 @@ export class FitScale extends Component {
         const maxHFrac = w >= h ? this.maxHeightFractionLandscape : this.maxHeightFractionPortrait;
         const s = Math.min(this.maxWidthFraction * availW / dw, maxHFrac * availH / dh);
         if (s > 0) this.node.setScale(s, s, 1);
-        // Bottom-anchored: raise the bottom edge by the margin too.
-        this.node.setPosition(0, this.anchorToBottom ? -h / 2 + m : 0, 0);
+        // Bottom-anchored: raise the bottom edge by the margin too, plus any extra lift.
+        this.node.setPosition(0, (this.anchorToBottom ? -h / 2 + m : 0) + this.verticalOffset, 0);
 
         // On a real resize the lossy-scale changed: rebuild the Box2D fixtures so the
         // static borders match the new world scale. Runtime only — never in editor.

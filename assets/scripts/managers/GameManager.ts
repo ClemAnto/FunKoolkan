@@ -34,7 +34,7 @@ const { ccclass, property } = _decorator;
  *  (off on GameDistribution per §7). Gates end-game routing + name-entry prep. */
 const LEADERBOARD_ENABLED = LEADERBOARD_CONFIG_ENABLED && LEADERBOARD_ALLOWED;
 
-export const VERSION     = '0.1.8';
+export const VERSION     = '0.1.22';
 /** Dedicated leaderboard scene; the game-over flow hands the score off to it. */
 const RANKING_SCENE      = 'Ranking';
 /** Main menu scene — target of the Menu buttons on the pause/end panels. */
@@ -42,7 +42,7 @@ const MAIN_MENU_SCENE    = 'MainMenu';
 /** Delay before the game-over / victory panel fades in, so the end moment (shake/cascade) plays first. */
 const END_PANEL_DELAY    = 1.0;
 const DEBUG              = false;
-const DEBUG_ENGINE       = true;
+const DEBUG_ENGINE       = false;
 const SHOW_ENDLINE_DEBUG = false;  // set true to draw the purple dashed game-over threshold line (debug)
 const LIVE_RESIZE        = true;   // real-time relayout on browser resize — kept on in production too (negligible cost, fires only on resize)
 const TEST_FIRST_LAUNCH_GAMEOVER = false; // TEST: first launch forces game-over @15k to exercise the leaderboard flow
@@ -655,9 +655,11 @@ export class GameManager extends Component implements IGameManagerDebug {
                 // const prefilled = this.spawnMgr.prefill();
                 // prefilled.forEach(w => this._recordSpawn(w.type, this.currentRound));
                 // this.warriors.push(...prefilled);
-                const firstWarrior = this.createWarrior();
-                this.activateWarrior(firstWarrior);
-                this.onboarding?.maybeShowAimHint();  // first-turn "drag & release" gesture hint
+                // Warrior launch replaced by StoneLauncher (prototype): no active warrior is created,
+                // so InputController stays present but inert (all its handlers early-return without one).
+                // const firstWarrior = this.createWarrior();
+                // this.activateWarrior(firstWarrior);
+                // this.onboarding?.maybeShowAimHint();
             }
 
             if (DEBUG) this._debugPanelNode = this._spawnDebugPanel();
