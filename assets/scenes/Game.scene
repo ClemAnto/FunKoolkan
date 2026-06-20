@@ -315,6 +315,9 @@
       },
       {
         "__id__": 33
+      },
+      {
+        "__id__": 265
       }
     ],
     "_prefab": null,
@@ -937,22 +940,22 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "_alignFlags": 20,
+    "_alignFlags": 12,
     "_target": {
       "__id__": 6
     },
-    "_left": 0.15,
+    "_left": 20,
     "_right": 0,
     "_top": 0,
-    "_bottom": 40,
+    "_bottom": 20,
     "_horizontalCenter": 0,
-    "_verticalCenter": -0.2,
-    "_isAbsLeft": false,
+    "_verticalCenter": 0,
+    "_isAbsLeft": true,
     "_isAbsRight": true,
     "_isAbsTop": true,
     "_isAbsBottom": true,
     "_isAbsHorizontalCenter": true,
-    "_isAbsVerticalCenter": false,
+    "_isAbsVerticalCenter": true,
     "_originalWidth": 0,
     "_originalHeight": 0,
     "_alignMode": 2,
@@ -2240,13 +2243,13 @@
     "_left": 0,
     "_right": 0,
     "_top": 0,
-    "_bottom": 0.19858055555555557,
+    "_bottom": 10,
     "_horizontalCenter": 0,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
     "_isAbsRight": true,
     "_isAbsTop": true,
-    "_isAbsBottom": false,
+    "_isAbsBottom": true,
     "_isAbsHorizontalCenter": true,
     "_isAbsVerticalCenter": true,
     "_originalWidth": 0,
@@ -8659,5 +8662,40 @@
   {
     "__type__": "cc.PostSettingsInfo",
     "_toneMappingType": 0
+  },
+  {
+    "__type__": "d61acesAW9Eqb5DPysxCGG/",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 6
+    },
+    "_enabled": true,
+    "__prefab": null,
+    "footprintWidth": 0,
+    "footprintHeight": 0,
+    "insetLeft": 36,
+    "insetRight": 36,
+    "insetTop": 36,
+    "insetBottom": 36,
+    "cornerRadius": 56,
+    "cornerSegments": 3,
+    "wallThickness": 18,
+    "restitution": 0.4,
+    "friction": 0.1,
+    "showDebugOutline": false,
+    "_id": "ST00ArenaBounds00000",
+    "spawnTestBall": true,
+    "testBallSpeed": 300,
+    "testBallRadius": 22,
+    "stoneSprite": {
+      "__uuid__": "86e02006-2651-4f1f-a247-b54076da6d06@f9941",
+      "__expectedType__": "cc.SpriteFrame"
+    },
+    "warriorsLayer": {
+      "__id__": 64
+    },
+    "testBallCount": 3
   }
 ]

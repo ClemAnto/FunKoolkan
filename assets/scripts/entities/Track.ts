@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, RigidBody2D, ERigidBody2DType, BoxCollider2D, PolygonCollider2D, Size, Vec2, UITransform, view, Graphics, Color, UIOpacity, tween, Tween } from 'cc';
+import { _decorator, Component, Node, Vec2, view } from 'cc';
 const { ccclass, property } = _decorator;
 
 // ── Layout — recalculated at startup from actual screen size ─────────────────
@@ -67,186 +67,26 @@ export function initLayout(funnelPct?: number): void {
     FUNNEL_OFFSET    = Math.round(TRACK_W * _funnelPct / 200);
 }
 
+/**
+ * Legacy Track component. The funnel-wall building (buildWalls) was REMOVED — the arena
+ * collision boundary is now owned by ArenaBounds. What remains only keeps the layout
+ * constants (initLayout) and the small public API that GameManager still calls
+ * (relayout / setLinePulse / showDebugLine / arenaSprite). To be retired fully when the
+ * old gameplay is replaced.
+ */
 @ccclass('Track')
 export class Track extends Component {
     @property({ type: Node, tooltip: 'Arena sprite node (dependency assigned explicitly in the editor — never resolved by name).' })
     arenaSprite: Node | null = null;
 
-    private readonly funnelPercentage   = 75;
-    private readonly wallThickness      = 12;
-    private readonly topWallThickness   = 40;
+    private readonly funnelPercentage = 75;
     showDebugLine = false;
-    private _walls: Node[] = [];
-    private _lineOpacity: UIOpacity | null = null;
-    private _linePulseActive = false;
-    private _spriteUIT: UITransform | null = null;
 
-    start() {
-        const vs = view.getVisibleSize();
-        initLayout(this.funnelPercentage);
-
-        const spriteNode = this.arenaSprite;
-        this._spriteUIT = spriteNode?.getComponent(UITransform) ?? null;
-        if (this._spriteUIT) {
-            this._spriteUIT.node.on(UITransform.EventType.SIZE_CHANGED,    this.buildWalls, this);
-            this._spriteUIT.node.on(Node.EventType.TRANSFORM_CHANGED,      this.buildWalls, this);
-        }
-
-        this.buildWalls();
-    }
-
-    onDestroy() {
-        // A destroyed component is still a truthy reference but its .node is null, so
-        // guard on isValid — otherwise scene teardown (e.g. game-over → Ranking) crashes
-        // with "Cannot read properties of null (reading 'off')".
-        const spriteNode = this._spriteUIT?.node;
-        if (spriteNode?.isValid) {
-            spriteNode.off(UITransform.EventType.SIZE_CHANGED,   this.buildWalls, this);
-            spriteNode.off(Node.EventType.TRANSFORM_CHANGED,     this.buildWalls, this);
-        }
-        this._spriteUIT = null;
-    }
-
+    /** Recomputes the exported layout constants (TRACK_W, LAYOUT_SCALE, …) other systems read. */
     relayout(): void {
         initLayout(this.funnelPercentage);
-        this.buildWalls();
     }
 
-    setLinePulse(active: boolean): void {
-        if (this._linePulseActive === active) return;
-        this._linePulseActive = active;
-        if (active && this.showDebugLine) this._startLinePulse(); else this._stopLinePulse();
-    }
-
-    private _startLinePulse(): void {
-        if (!this._lineOpacity) return;
-        const op = this._lineOpacity;
-        Tween.stopAllByTarget(op);
-        const loop = () => {
-            if (!this._linePulseActive || !op.isValid) return;
-            tween(op).to(0.35, { opacity: 30 }).to(0.35, { opacity: 255 }).call(loop).start();
-        };
-        loop();
-    }
-
-    private _stopLinePulse(): void {
-        if (!this._lineOpacity) return;
-        Tween.stopAllByTarget(this._lineOpacity);
-        this._lineOpacity.opacity = 255;
-    }
-
-    private buildWalls(): void {
-        if (this._lineOpacity) {
-            Tween.stopAllByTarget(this._lineOpacity);
-            this._lineOpacity = null;
-        }
-        for (const w of this._walls) w.destroy();
-        this._walls = [];
-
-        const spriteNode = this.arenaSprite;
-        if (!spriteNode) { console.warn('[Track] TrackSprite not found'); return; }
-        const uit = spriteNode.getComponent(UITransform);
-        if (!uit)  { console.warn('[Track] TrackSprite has no UITransform'); return; }
-
-        // sprite bounds in Track-local space (accounts for position, scale, anchor)
-        const w   = uit.contentSize.width;
-        const h   = uit.contentSize.height;
-        const ax  = uit.anchorPoint.x;
-        const ay  = uit.anchorPoint.y;
-        const px  = spriteNode.position.x;
-        const py  = spriteNode.position.y;
-        const scx = spriteNode.scale.x;
-        const scy = spriteNode.scale.y * 2;
-
-        const left   = px + (-ax)       * w * scx;
-        const right  = px + (1 - ax)    * w * scx;
-        const bot    = py + (-ay)       * h * scy;
-        const top    = py + (1 - ay)    * h * scy;
-        const fullW  = right - left;
-        const centerX = (left + right) / 2;
-
-        // wall thickness = wallThickness% of sprite width
-        const t    = this.wallThickness / 100 * fullW;
-        const tTop = this.topWallThickness / 100 * fullW;
-        // funnel top edge (centered, narrower)
-        const topW  = this.funnelPercentage / 100 * fullW;
-        const topL  = centerX - topW / 2;
-        const topR  = centerX + topW / 2;
-
-        // Export inner wall edges so trajectory simulation can match Box2D exactly
-        WALL_LB.set(left  + t,      bot);
-        WALL_LT.set(topL  + t,      top);
-        WALL_RB.set(right - t,      bot);
-        WALL_RT.set(topR  - t,      top);
-
-
-        this.spawnBoxWall('WallBottom', centerX, bot + t    / 2, fullW, t,    0.0, 0.0);
-        this.spawnBoxWall('WallTop',    centerX, top - tTop / 2, topW,  tTop, 0.0, 1.0);
-
-        this.spawnFunnelWall('WallLeft', [
-            new Vec2(left,      bot),
-            new Vec2(left + t,  bot),
-            new Vec2(topL + t,  top),
-            new Vec2(topL,      top),
-        ], 0.8, 0.05);
-
-        this.spawnFunnelWall('WallRight', [
-            new Vec2(right - t, bot),
-            new Vec2(right,     bot),
-            new Vec2(topR,      top),
-            new Vec2(topR - t,  top),
-        ], 0.8, 0.05);
-
-        // If TrackSprite has a GameOverLine child, use its world Y as the authoritative BASE
-        // threshold (lowest quota); the current dynamic raise is re-applied on top of it.
-        const goEditorNode = spriteNode.getChildByName('GameOverLine');
-        if (goEditorNode) {
-            _goBaseLineY = Math.round(goEditorNode.worldPosition.y);
-            _applyGoLine();
-        }
-
-        const lineNode = new Node('GameOverLine');
-        lineNode.setParent(this.node);
-        lineNode.active = this.showDebugLine;
-        const g = lineNode.addComponent(Graphics);
-        g.lineWidth   = 6;
-        g.strokeColor = new Color(255, 0, 0, 153);
-        const dashLen = 12, gapLen = 8, ly = GAME_OVER_LINE_Y;
-        let lx = -TRACK_W / 2;
-        while (lx < TRACK_W / 2) {
-            g.moveTo(lx, ly);
-            g.lineTo(Math.min(lx + dashLen, TRACK_W / 2), ly);
-            lx += dashLen + gapLen;
-        }
-        g.stroke();
-        this._lineOpacity = lineNode.addComponent(UIOpacity);
-        if (this._linePulseActive && this.showDebugLine) this._startLinePulse();
-        this._walls.push(lineNode);
-    }
-
-    private spawnFunnelWall(name: string, points: Vec2[], restitution: number, friction: number): void {
-        const node = new Node(name);
-        node.setParent(this.node);
-        node.setPosition(0, 0);
-        const rb   = node.addComponent(RigidBody2D);
-        rb.type    = ERigidBody2DType.Static;
-        const col  = node.addComponent(PolygonCollider2D);
-        col.points = points;
-        col.friction    = friction;
-        col.restitution = restitution;
-        this._walls.push(node);
-    }
-
-    private spawnBoxWall(name: string, x: number, y: number, w: number, h: number, restitution: number, friction: number): void {
-        const node = new Node(name);
-        node.setParent(this.node);
-        node.setPosition(x, y);
-        const rb   = node.addComponent(RigidBody2D);
-        rb.type    = ERigidBody2DType.Static;
-        const col  = node.addComponent(BoxCollider2D);
-        col.size   = new Size(w, h);
-        col.friction    = friction;
-        col.restitution = restitution;
-        this._walls.push(node);
-    }
+    /** No-op: the old debug game-over line was removed together with the funnel walls. */
+    setLinePulse(_active: boolean): void { /* intentionally empty */ }
 }
