@@ -1,6 +1,7 @@
 import { _decorator, Component, Node, Vec2, Vec3, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate, Graphics, Color } from 'cc';
 import { projectX, projectY, sizeXFactor, sizeYFactor } from '../config/Perspective';
 import { Rune } from './Rune';
+import { Magnet } from './Magnet';
 
 const { ccclass } = _decorator;
 const _v = new Vec3();
@@ -30,7 +31,7 @@ export class Stone extends Component {
     /** Debug overlay toggle (set by StoneLauncher.debugStones): a flat ellipse + rotation radius per stone. */
     static debugDraw = false;
     private _dbg: Graphics | null = null;
-    /** Shared debug layer (above WarriorsLayer) so the debug renders ON TOP of the stones. */
+    /** Shared debug layer (above the stone layer) so the debug renders ON TOP of the stones. */
     private static _dbgLayer: Node | null = null;
 
     lateUpdate(): void {
@@ -59,7 +60,7 @@ export class Stone extends Component {
     }
 
     /** Lazily create a shared debug layer as the LAST child of the arena's parent (above
-     *  WarriorsLayer → on top of the stones), mirroring the arena's transform so arena-local draw
+     *  the stone layer → on top of the stones), mirroring the arena's transform so arena-local draw
      *  coords still map correctly. Debug only. */
     private _debugLayer(): Node | null {
         const arena = this.arena, world = arena?.parent;
@@ -69,7 +70,7 @@ export class Stone extends Component {
             layer = new Node('__StonesDebugLayer');
             layer.layer = arena.layer;
             layer.setParent(world);
-            layer.setSiblingIndex(world.children.length - 1);   // above WarriorsLayer
+            layer.setSiblingIndex(world.children.length - 1);   // above the stone layer
             Stone._dbgLayer = layer;
         }
         layer.setPosition(arena.position);   // mirror Arena (position + scale) so arena-local coords map
@@ -155,6 +156,15 @@ export class Stone extends Component {
 
         rb.linearVelocity = o.velocity;
         if (o.angularVelocity) rb.angularVelocity = o.angularVelocity;   // deg/s; decays via angularDamping
+
+        // Mana-circuit magnetism: the body becomes a same-colour attractor once it connects to a pole.
+        Magnet.attach(body, {
+            isPole: false,
+            gemType: o.gemType ?? 0,
+            radius: o.radius,
+            arena: o.arena,
+            flightDamping: o.linearDamping ?? 0.5,
+        });
 
         if (o.viewPrefab && o.layer) {
             const view = instantiate(o.viewPrefab) as unknown as Node;

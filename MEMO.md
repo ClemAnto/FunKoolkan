@@ -38,15 +38,40 @@
 - **Box2D debug nativo**: disegna i collider cerchio SENZA linea raggio/angolo. L'overlay `StoneDebug` (`StoneLauncher.debugStones`) disegna ellisse + raggio rotante (ora con `_zAngleDeg()`, ±180). **In scena tutti i debug sono OFF** (`debugStones=false`, `ArenaBounds.showDebugOutline=false`).
 - **Rename**: nodi scena `Crossbow→StoneLauncher`, `CrossbowBase→StoneLauncherBase`, `CrossbowLauncher→StoneLauncherArm`. `InputController.ts` (legacy, inerte) fa ancora `getChildByName('Crossbow')` → warning innocuo + resta disabilitato. **Da ritirare.**
 
-### NEXT + feel launcher (pop / timing / swap / traiettoria)  *(v0.1.23)*
-Tipo gemma casuale a ogni lancio (`numGemTypes=3`) + anteprima del prossimo (coda current→next). Editor: `StoneLauncher.nextPreview` → nodo **NextPreview**, `Rune.gems` = [gem_green(0), gem_yellow(1), gem_red(2)].
+### Architettura launcher / NEXT / coordinatore — split (2026-06-21)
+Tre classi specializzate + un coordinatore (no monoliti — vedi memoria feedback-specialized-classes):
+- **`StoneLauncher`** (nodo launcher): SOLO lancio — input/mira/slingshot/traiettoria + la **stone caricata** (loaded) col suo pop. Espone host-hook `onLaunch(firedType)` e `onAimPress(x,y)→bool` + API `showInitial`/`armReload`/`swapLoaded` + getter `isLoadAnimating`/`loadedType`. Non conosce NEXT né la coda.
+- **`NextPreview`** (nodo NextPreview): SOLO anteprima del prossimo gem — rune + pop-out/in. API `showInitial`/`reload`/`swapTo`/`containsUIPoint` + getter `isAnimating`.
+- **`ArenaManager`** (coordinatore): possiede la **coda** `_currentType`/`_nextType` (+ `numGemTypes`) e lega launcher↔NEXT. In `start()` cabla gli hook e fa `showInitial`; su `onLaunch` avanza (next→current, nuovo next) e chiama `launcher.armReload` + `next.reload`; su `onAimPress`, se il tap è sul NEXT (`containsUIPoint`) fa lo **swap** (`swapLoaded`+`swapTo`, gated su isAnimating). Guida anche `Magnet.solve()` e tiene i tunable magnet di sistema.
 
-- **Pop**: macchine a fasi (no `tween`, perché `_positionLoadedStone` setta la scala ogni frame e schiaccerebbe il tween). Loaded: `_loadPhase` settled/pop-out/pop-in, multiplier ease-out-back `_popScale`. NEXT: `_nextPhase` pop-out→(attesa)→pop-in. Helper `_loadMult()`/`_popScale()`.
-- **Timing lancio**: al release il loaded resta a scala 0 (launcher vuoto) e fa pop-in dopo **`loadPopDelay=1.0s`** (`_loadDelayT`, gate su `_loadArmed`). Il NEXT pop-out parte subito; refill nuova gemma dopo **`nextRefillDelay=0.5s`** dal pop-out (→ il NEXT si ripopola PRIMA che il loaded si carichi: ordine voluto al 2026-06-21).
-- **Swap (tap sul NEXT)**: `_pointOverNext` (bbox UITransform vs `getUILocation`) intercetta il tap → **niente lancio**; `_swapNextAndLoaded()` scambia current↔next con pop su entrambi (`_nextSwap=true` = pop-in immediato, salta il refill delay). Ignorato se un'animazione è in corso.
-- **No spin al lancio**: rimossa `launchSpin` e `angularVelocity` dallo spawn (il corpo non riceve spin; ruota solo per gli urti).
-- **Dot traiettoria**: colore = gemma corrente via `gemColors[]` (default verde/giallo/rosso, override in editor). `AimPreview` renderizzato **dietro al launcher** (`setSiblingIndex(this.node.getSiblingIndex())`). Lunghezza: `SIM_MAX_STEPS=3000` (era il vero limite, non la velocità), `SIM_MIN_SPEED=2`, alpha floor **120** (coda ben visibile).
-- **Scale**: `nextPreviewScale=0.4` (scena), `loadedScaleFactor=0.85` (loaded un po' più piccolo del lanciato), `loadPopDuration=0.22`, `nextPopDuration=0.18`.
+### Feel launcher/NEXT (pop / timing / swap / traiettoria) — valori calibrati
+- **Pop**: macchine a fasi (no `tween`, perché `_positionLoadedStone` setta la scala ogni frame). Loaded → `_loadPhase` in StoneLauncher; NEXT → `_phase` in NextPreview; ease-out-back `_popScale` (duplicato nelle due classi, tiny).
+- **Timing lancio**: al release il loaded resta a scala 0 (launcher vuoto) e fa pop-in dopo **`loadPopDelay=1.0s`** (StoneLauncher); il NEXT pop-out parte subito, refill nuova gemma dopo **`refillDelay=0.5s`** → il NEXT si ripopola PRIMA del loaded (ordine voluto). Le due macchine girano indipendenti: la tempistica relativa è funzione dei delay, non dell'ordine di chiamata.
+- **Swap (tap sul NEXT)**: `NextPreview.containsUIPoint` (bbox UITransform) → ArenaManager consuma il tap (niente lancio) e scambia current↔next con pop su entrambi (`swapTo` salta il refill delay). Ignorato se un'animazione è in corso.
+- **No spin al lancio**: spawn senza `angularVelocity`.
+- **Dot traiettoria** (StoneLauncher): colore = gemma caricata via `gemColors[]`; `AimPreview` dietro al launcher; `SIM_MAX_STEPS=3000`, `SIM_MIN_SPEED=2`, alpha floor **120**.
+- **Scale**: `NextPreview.previewScale=0.4`, `loadedScaleFactor=0.85`, `loadPopDuration=0.22`, `NextPreview.popDuration=0.18`, `numGemTypes=3` (su ArenaManager). Editor `Rune.gems`=[gem_green(0),gem_yellow(1),gem_red(2)].
+
+### Magnetismo / classe `Magnet`  *(2026-06-21 — fondamenta circuito di mana)*
+Classe unica `entities/Magnet.ts` che incapsula il comportamento "calamita", su due tipi:
+- **Polo** (`isPole`, dawn/sunset): `Magnet` **attaccato al nodo in EDITOR** (@property `isPole`/`arena`/`radius`/`poleRestitution`/`poleFriction`). Attrae **qualsiasi** stone; possiede un **corpo circolare KINEMATIC** sotto l'Arena (ground space) → le stone ci si appoggiano; ri-pinnato a ogni solve (sopravvive al resize).
+- **Stone**: `Magnet` aggiunto a runtime in `Stone.spawn` (via `Magnet.attach`). Diventa calamita **solo quando `connected`** (catena monocromatica che tocca un polo) → attrae **solo lo stesso colore**.
+
+**Connettività** = BFS sul contact-graph in ground space (`Magnet.solve`): seed = stone entro `contactGap` da un polo (qualsiasi colore) → espansione a stone dello **stesso `gemType`**. Ricalcolata ogni frame.
+**Forze**: `applyForceToCenter`, normalizzate 60fps (`dt × FORCE_FPS_REF` in **`ArenaManager.update`** → `Magnet.solve`). Pull **monodirezionale** (solo `0 < gap ≤ attractGap`, mai spinta oltre il contatto) con rampa forte al contatto `×(1+t²·hold)` → coppie attaccate difficili da separare. Le `connected` ricevono `linearDamping=settleDamping`; le altre `flightDamping`.
+**Coordinate (gotcha)**: corpi stone figli di Arena → `node.position`=ground. Poli nello stone layer (proiettato): ground = `arena.worldMatrix⁻¹ × pole.worldPosition` → `unprojectX/Y`. Tutto in ground px (isotropo: Arena FitScale uniforme).
+**Driver/registry**: i `Magnet` si auto-registrano (`Magnet._all`, onEnable/onDisable); `ArenaManager.update` chiama `Magnet.solve()` 1×/frame; `onDisable` distrugge il `PoleBody` proxy.
+**Tunable di sistema** (`@property` su ArenaManager): `magnetRange=100`, `magnetForce=600`, `magnetHold=14`, `magnetContactGap=16`, `magnetSettleDamping=6`. **Per-polo** (`@property` su Magnet): `radius=60`, `poleRestitution=0`, `poleFriction=0.3`. Da tarare in play.
+
+### Editor — wiring richiesto dal refactor (2026-06-21)
+1. `Magnet` su **dawn** e **sunset**: `isPole=true`, `arena`→Arena, `radius`~60. (body invisibile: il moai resta la vista autorata)
+2. `NextPreview` sul nodo **NextPreview**: collegare `runePrefab`.
+3. `ArenaManager` su un nodo gameplay (es. Arena): `launcher`→StoneLauncher, `next`→NextPreview, `numGemTypes=3`.
+4. `StoneLauncher`: le proprietà NEXT/coda sono sparite; lancio/loaded/gemColors mantengono i valori di scena (stesso componente). `StoneLayer` resta collegato (`formerlySerializedAs` da `warriorsLayer`).
+> ⚠️ Senza (2)+(3) il launcher non mostra la loaded e non ricarica (l'interazione è nel coordinatore).
+
+### GameManager
+**SVUOTATO a placeholder**: motore FunWarriors (merge/powerup/punteggio/round/resize/leaderboard, ~3650 righe) rimosso, resta solo `export const VERSION` (originale nel git history). L'infra riusabile (VFXManager/Settings/pannelli/leaderboard/Portal) è **mantenuta** (serve al gameplay FunKoolkan futuro). File warrior-only (Warrior, SpawnManager, i 4 powerup-effect+sparkle, DebugPanel, OnboardingHints-merge) ora **orfani**: codice morto, non rompono la build, da valutare separatamente (NON cancellare gli effetti riutilizzabili).
 
 ---
 
