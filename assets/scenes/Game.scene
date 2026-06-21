@@ -2370,18 +2370,17 @@
     "arenaBounds": {
       "__id__": 78
     },
-    "launchSpeed": 50,
+    "launchSpeed": 200,
     "stoneRadius": 31.6,
     "stoneViewScale": 0.575,
     "minDrag": 50,
     "maxDrag": 220,
     "bowFollowFactor": 0.7,
-    "trajectoryLength": 0,
+    "trajectoryLength": 100000,
     "stoneRestitution": 0.04,
     "stoneFriction": 0.3,
     "stoneDamping": 0.5,
     "debugStones": true,
-    "gemColors": [],
     "loadedScaleFactor": 0.85,
     "loadPopDuration": 0.22,
     "loadPopDelay": 1,
@@ -2455,7 +2454,7 @@
         "__id__": 65
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 68
@@ -2633,7 +2632,7 @@
     "node": {
       "__id__": 64
     },
-    "_enabled": false,
+    "_enabled": true,
     "__prefab": null,
     "isPole": true,
     "repel": false,
@@ -2659,7 +2658,7 @@
         "__id__": 71
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 74
@@ -2837,7 +2836,7 @@
     "node": {
       "__id__": 70
     },
-    "_enabled": false,
+    "_enabled": true,
     "__prefab": null,
     "isPole": true,
     "repel": false,

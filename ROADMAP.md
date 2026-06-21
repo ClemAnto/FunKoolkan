@@ -77,13 +77,14 @@
 ### Aperti (da chiudere per dichiarare la Fase 1 conclusa)
 
 - [ ] **Shear della gemma** dalla scala anisotropa (`gem.scale.y=0.5` × `sizeYFactor`): la rotazione del corpo è corretta (±180), ma una rotazione dentro scala non uniforme si renderizza distorta. **Scelta di design** da prendere: (A) arte gemma piatta/radiale, (B) split base/gemma, (C) niente rotazione della gemma. Vedi MEMO §gotcha.
-- [ ] **Ritirare `InputController`** (legacy, inerte): cerca ancora `Crossbow` per nome → warning innocuo. Rimuoverlo o sostituirlo con l'input del nuovo launcher.
+- [ ] **Rimuovere i file warrior-only orfani** — `InputController`, `Warrior`, `SpawnManager`, i 4 powerup-effect (+sparkle), `DebugPanel`, `OnboardingHints`-merge: codice morto dopo lo svuotamento del `GameManager` (non rompono la build). ⚠️ **Tenere** gli effetti/Settings/pannelli riusabili.
+- [x] **Refactor architetturale** (sessione 2026-06-21): split `StoneLauncher`/`NextPreview`/`ArenaManager`, `GameManager` svuotato a placeholder, `DepthSort`, `config/RuneTypes.ts`.
 
 > Modello prospettico C (taper mite) resta nel git history (`f61282b`) se servisse tornare indietro.
 
 ---
 
-## FASE 2 — Core meccanico: circuito di mana ⬜ *(prossima — il "make-or-break")*
+## FASE 2 — Core meccanico: circuito di mana 🔄 *(in corso — il "make-or-break")*
 
 **Obiettivo**: validare il **feel** della meccanica che fa vivere o morire il gioco — conduzione monocromatica + magnetismo + poli fissi. Tutto in greybox (rune-gemma colorate semplici, poli a placeholder). È il prototipo che la deep-research indica come priorità assoluta.
 
@@ -98,12 +99,14 @@
 
 ### Conduzione e poli
 
-- [x] **Poli Alba/Tramonto** (dawn/sunset) — `@property` su StoneLauncher; ognuno ha un **corpo fisico circolare KINEMATIC** in ground space (le stone ci si appoggiano) + è magnetico per **qualsiasi** colore (classe `Magnet`, 2026-06-21)
-- [x] **Magnetismo / connettività** (classe `Magnet`) — BFS sul contact-graph in ground space: stone vicina a un polo → `connected` (qualsiasi colore); espansione a stone dello **stesso colore** → diventano calamite same-color. Pull monodirezionale con **hold forte al contatto** (coppie attaccate difficili da separare, come richiesto) + settle-damping sui cluster. Riusa il modello forza del merge ereditato (`applyForceToCenter`, normalizzato 60fps). Vedi MEMO §Magnetismo
-- 🔄 **Tolleranza di conduzione** — implementata come `magnetContactGap` (soglia "vicine conducono"); resta da **tarare** in playtest
-- [ ] **Chiusura del circuito** → rilevare quando una catena monocromatica tocca **entrambi** i poli → **ondata di mana** lungo il path → **dissoluzione** dell'intera catena (+punti). *(La connettività per-polo c'è già; manca il check "stessa catena tocca Alba E Tramonto" + l'output dissoluzione)*
-- 🔄 **Magnetismo same-color — taratura**: ⚠️ ora il pull è forte al contatto (per "non si separano"); va verificato in play che il pull a lungo raggio resti un **nudge** che non auto-assembla la catena al posto del giocatore (tarare `magnetForce`/`magnetRange`)
+- [x] **Poli Alba/Tramonto** (dawn/sunset) — `Magnet` attaccato al nodo in **editor**; ognuno ha un **corpo circolare KINEMATIC** solido in ground space (le stone ci si appoggiano) + è magnetico per **qualsiasi** colore (2026-06-21)
+- [x] **Magnetismo + connettività** (classe `Magnet`, modello **PETRIFICAZIONE** ispirato a SuperSlide15) — la stone libera è attratta a **corto raggio** (`attractGap` pochi px) verso il magnete valido **più vicino** (polo qualsiasi colore, o stone magnetizzata stesso colore); quando i bordi si toccano e resta **near-still per 2s** → si **pietrifica** (snap esatto sul contorno + `Static`, insensibile a tutti gli altri magneti). **Niente forza al contatto → niente jitter/loop**, deterministico. **Albero `parent`** radicato ai poli = la catena. Magnet **inverso `repel`**. Debug: cerchio-polo, albero, log. Vedi MEMO §Magnetismo
+- [x] **Tolleranza di conduzione** = `snapGap` (bordi che si toccano) + `petrifyDelay`/`petrifyMaxSpeed`
+- 🔄 **Taratura feel** in playtest: raggio (`magnetRange`), forza, delay/soglia petrify, distribuzione
+- [ ] **Chiusura del circuito** → rilevare quando una catena monocromatica collega **entrambi** i poli (camminando l'albero `Magnet.parent` da Alba a Tramonto stesso colore) → **ondata di mana** → **dissoluzione** della catena (+punti). *(L'albero per-polo c'è già; manca il check "stessa catena tocca Alba E Tramonto" + l'output scarica)*
 - [ ] **Path che si illumina** durante la costruzione (onboarding visivo, anche greybox)
+
+> Infrastruttura di sessione (2026-06-21): split manager (`StoneLauncher`/`NextPreview`/`ArenaManager`), `GameManager` svuotato, `DepthSort`, `config/RuneTypes.ts` (6 tipi runa). Vedi CLAUDE.md §Stato attuale.
 
 ### Validazione
 

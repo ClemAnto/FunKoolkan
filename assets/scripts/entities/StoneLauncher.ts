@@ -2,6 +2,7 @@ import { _decorator, Component, Node, Vec2, Vec3, UITransform, input, Input, Eve
 import { Stone } from './Stone';
 import { Rune } from './Rune';
 import { ArenaBounds } from './ArenaBounds';
+import { RUNES } from '../config/RuneTypes';
 import { projectX, projectY, sizeXFactor, sizeYFactor, unprojectX, unprojectY } from '../config/Perspective';
 
 const { ccclass, property } = _decorator;
@@ -78,8 +79,6 @@ export class StoneLauncher extends Component {
     @property({ tooltip: 'Debug: draw a flat ellipse + rotation radius on each launched stone.' })
     debugStones = false;
 
-    @property({ type: [Color], tooltip: 'Trajectory-dot colour per gem type (index = gem type). Tune to match the gem art.' })
-    gemColors: Color[] = [new Color(90, 210, 90), new Color(245, 210, 70), new Color(235, 80, 80)];   // green / yellow / red (gem_green/yellow/red)
     @property({ type: CCFloat, slide: true, range: [0, 1, 0.05], tooltip: 'Loaded stone size relative to the launched stone (1 = same, <1 = a bit smaller on the launcher).' })
     loadedScaleFactor = 0.85;
     @property({ type: CCFloat, tooltip: 'Duration (s) of the scale-up "pop" when a new stone loads on the launcher (0 = instant).' })
@@ -428,7 +427,7 @@ export class StoneLauncher extends Component {
         const step = 26, dotR = 11;
         const maxLen = this.trajectoryLength > 0 ? Math.min(this.trajectoryLength, total) : total;   // visible-length cap
         const col = this._dotColor;                 // reused; only alpha changes per dot
-        const tint = this.gemColors[this._loadedType];   // dots match the gem about to fire
+        const tint = RUNES[this._loadedType]?.color;   // dots match the gem about to fire (from the rune type registry)
         if (tint) { col.r = tint.r; col.g = tint.g; col.b = tint.b; }
         let phase = this._trajPhase, cum = 0;
         let fpy = physPts[0].y, fvx = projectX(physPts[0].x, fpy), fvy = projectY(fpy);

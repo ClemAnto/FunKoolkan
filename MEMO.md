@@ -49,7 +49,7 @@ Tre classi specializzate + un coordinatore (no monoliti — vedi memoria feedbac
 - **Timing lancio**: al release il loaded resta a scala 0 (launcher vuoto) e fa pop-in dopo **`loadPopDelay=1.0s`** (StoneLauncher); il NEXT pop-out parte subito, refill nuova gemma dopo **`refillDelay=0.5s`** → il NEXT si ripopola PRIMA del loaded (ordine voluto). Le due macchine girano indipendenti: la tempistica relativa è funzione dei delay, non dell'ordine di chiamata.
 - **Swap (tap sul NEXT)**: `NextPreview.containsUIPoint` (bbox UITransform) → ArenaManager consuma il tap (niente lancio) e scambia current↔next con pop su entrambi (`swapTo` salta il refill delay). Ignorato se un'animazione è in corso.
 - **No spin al lancio**: spawn senza `angularVelocity`.
-- **Dot traiettoria** (StoneLauncher): colore = gemma caricata via `gemColors[]`; `AimPreview` dietro al launcher; `SIM_MAX_STEPS=3000`, `SIM_MIN_SPEED=2`, alpha floor **120**.
+- **Dot traiettoria** (StoneLauncher): colore = `RUNES[loadedType].color` (dalla costante `config/RuneTypes.ts`, NON più una @property `gemColors`); `AimPreview` dietro al launcher; `SIM_MIN_SPEED=0.5`, dot 11px, alpha floor 165; lunghezza visibile cap via `trajectoryLength` (@property, 0=intero).
 - **Scale**: `NextPreview.previewScale=0.4`, `loadedScaleFactor=0.85`, `loadPopDuration=0.22`, `NextPreview.popDuration=0.18`, `numGemTypes=3` (su ArenaManager). Editor `Rune.gems`=[gem_green(0),gem_yellow(1),gem_red(2)].
 
 ### Magnetismo / classe `Magnet` — modello "PETRIFICAZIONE"  *(2026-06-21)*
@@ -70,7 +70,10 @@ Classe unica `entities/Magnet.ts`. **Modello deterministico** (NON forza-che-tie
 1. `Magnet` su **dawn** e **sunset**: `isPole=true`, `arena`→Arena, `radius`~60. (body invisibile: il moai resta la vista autorata)
 2. `NextPreview` sul nodo **NextPreview**: collegare `runePrefab`.
 3. `ArenaManager` su un nodo gameplay (es. Arena): `launcher`→StoneLauncher, `next`→NextPreview, `numGemTypes=3`.
-4. `StoneLauncher`: le proprietà NEXT/coda sono sparite; lancio/loaded/gemColors mantengono i valori di scena (stesso componente). `StoneLayer` resta collegato (`formerlySerializedAs` da `warriorsLayer`).
+4. `StoneLauncher`: le proprietà NEXT/coda/gemColors sono sparite; lancio/loaded mantengono i valori di scena (stesso componente). Colore traiettoria ora da `RUNES`. `StoneLayer` resta collegato (`formerlySerializedAs` da `warriorsLayer`).
+
+### Tipi di runa — `config/RuneTypes.ts` (2026-06-21)
+Costante **`RUNES`** = unica fonte di verità: 6 tipologie `{id, name, color}` (green/yellow/red/turquoise/purple/amber). `id` = il gem type usato ovunque (Rune.setType, Magnet.gemType, coda lancio). `color` = colore firma (es. dot traiettoria via `RUNES[id].color`). I nodi `gem_*` nel prefab Rune vanno autorati nello **stesso ordine** (`gems[id]`). In gioco solo i primi `numGemTypes` (ArenaManager, default 3); gli altri = rampa di difficoltà (GDD §13). `RUNE_COUNT`=6.
 > ⚠️ Senza (2)+(3) il launcher non mostra la loaded e non ricarica (l'interazione è nel coordinatore).
 
 ### GameManager
