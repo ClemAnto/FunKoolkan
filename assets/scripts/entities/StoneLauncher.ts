@@ -2,17 +2,18 @@ import { _decorator, Component, Node, Vec2, Vec3, UITransform, input, Input, Eve
 import { Stone } from './Stone';
 import { Rune } from './Rune';
 import { ArenaBounds } from './ArenaBounds';
-import { projectX, projectY, sizeXFactor, unprojectX, unprojectY } from '../config/Perspective';
+import { projectX, projectY, sizeXFactor, sizeYFactor, unprojectX, unprojectY } from '../config/Perspective';
 
 const { ccclass, property } = _decorator;
 
 const MAX_AIM_ANGLE = 67.5 * Math.PI / 180;   // aim cone from straight-up (±75% toward horizontal)
 const SIM_DT = 1 / 60;
-const SIM_MAX_STEPS = 600;
-const SIM_MIN_SPEED = 10;
+const SIM_MAX_STEPS = 3000;
+const SIM_MIN_SPEED = 2;
 const SIM_REST_THRESHOLD = 20;
 const SIM_RECORD_DIST = 18;
 const _tmp = new Vec3();
+const _tmp2 = new Vec2();   // reused for point-in-NEXT hit tests (no per-touch alloc)
 
 interface Seg { ax: number; ay: number; bx: number; by: number; nx: number; ny: number; }
 
@@ -80,13 +81,36 @@ export class StoneLauncher extends Component {
     nextPreview: Node | null = null;
     @property({ type: CCInteger, tooltip: 'Number of gem types (random pick per launch).' })
     numGemTypes = 2;
+    @property({ type: [Color], tooltip: 'Trajectory-dot colour per gem type (index = gem type). Tune to match the gem art.' })
+    gemColors: Color[] = [new Color(90, 210, 90), new Color(245, 210, 70), new Color(235, 80, 80)];   // green / yellow / red (gem_green/yellow/red)
     @property({ type: CCFloat, tooltip: 'Scale of the rune shown in the NEXT preview.' })
     nextPreviewScale = 0.6;
+    @property({ type: CCFloat, slide: true, range: [0, 1, 0.05], tooltip: 'Loaded stone size relative to the launched stone (1 = same, <1 = a bit smaller on the launcher).' })
+    loadedScaleFactor = 0.85;
+    @property({ type: CCFloat, tooltip: 'Duration (s) of the scale-up "pop" when a new stone loads on the launcher (0 = instant).' })
+    loadPopDuration = 0.22;
+    @property({ type: CCFloat, tooltip: 'Delay (s) after a launch before the new stone pops onto the launcher.' })
+    loadPopDelay = 1.0;
+    @property({ type: CCFloat, tooltip: 'Duration (s) of each NEXT preview pop-out / pop-in.' })
+    nextPopDuration = 0.18;
+    @property({ type: CCFloat, tooltip: 'Delay (s) after the NEXT pops out before the new NEXT gem pops in.' })
+    nextRefillDelay = 0.5;
 
     private _aiming = false;
     private _currentType = 0;          // gem type that fires on the next release
     private _nextType = 0;             // gem type shown in the NEXT preview
     private _nextRune: Rune | null = null;
+    private _loadedRune: Rune | null = null;   // the stone resting on the launcher (current type, about to fire)
+    private _loadAnimT = 1;             // 0..1 progress within the current loaded phase
+    private _loadPhase: 0 | 1 | 2 = 0;  // 0 settled, 1 pop-out, 2 pop-in
+    private _loadArmed = false;         // in pop-in: hold until the load delay elapses (launch reload)
+    private _loadDelayT = 0;            // s left before the armed loaded pop-in is released
+    private _pendingLoadType = -1;      // gem type to show on the loaded once it has popped out (swap)
+    private _nextAnimS = 1;             // 0..1 scale multiplier on the NEXT preview during its pop
+    private _nextPhase: 0 | 1 | 2 | 3 = 0;  // 0 idle, 1 pop-out, 2 empty/waiting refill, 3 pop-in
+    private _nextSwap = false;          // true when the NEXT pop is part of a NEXT↔loaded swap (no refill delay)
+    private _nextRefillT = 0;           // s left (after pop-out) before the new NEXT gem pops in
+    private _pendingNextType = -1;      // gem type to reveal once the NEXT has popped out
     private _cur = new Vec2();         // current touch, UI coords
     private _preview: Graphics | null = null;
     private _segs: Seg[] | null = null;
@@ -119,6 +143,7 @@ export class StoneLauncher extends Component {
         this._currentType = this._randomType();
         this._nextType = this._randomType();
         this._buildNextPreview();
+        this._buildLoadedStone();
     }
 
     private _randomType(): number { return Math.floor(Math.random() * Math.max(1, this.numGemTypes)); }
@@ -135,12 +160,117 @@ export class StoneLauncher extends Component {
             this._nextRune = r.getComponent(Rune);
         }
         this._nextRune?.setType(this._nextType);
+        this._nextAnimS = 0; this._nextPhase = 3;   // pop the first NEXT in on start
+    }
+
+    /** Instantiate the rune resting on the launcher (the stone about to fire) as the LAST child of
+     *  the Arena, so it renders ON TOP of the launcher art. Sized/placed to match exactly the stone
+     *  that will spawn here on release (same stoneViewScale × depth-perspective at the launcher). */
+    private _buildLoadedStone(): void {
+        if (!this._loadedRune?.isValid) {
+            if (!this.arena?.isValid || !this.runePrefab) return;
+            const n = instantiate(this.runePrefab) as unknown as Node;
+            n.layer = this.arena.layer;
+            n.setParent(this.arena);
+            n.setSiblingIndex(this.arena.children.length - 1);   // above the launcher
+            this._loadedRune = n.getComponent(Rune);
+        }
+        this._loadedRune?.setType(this._currentType);
+        this._loadPhase = 2; this._loadAnimT = 0; this._loadArmed = false;   // pop the first stone in on start
+        this._positionLoadedStone();
+    }
+
+    /** Glue the resting stone to the launcher position with the same depth-scale a launched stone
+     *  gets at that point (its spawn position coincides, so the reload is seamless). */
+    private _positionLoadedStone(): void {
+        const r = this._loadedRune;
+        if (!r?.node?.isValid) return;
+        const lp = this.node.position;            // launcher (arena-local) = stone spawn/view point
+        const gy = unprojectY(lp.y);              // launcher depth in ground space
+        const base = this.stoneViewScale * this.loadedScaleFactor;   // a bit smaller than the launched stone
+        const pop = this._loadMult();   // baked here: the per-frame setScale would override a tween
+        r.node.setPosition(lp.x, lp.y, 0);
+        r.node.setScale(base * sizeXFactor(gy) * pop, base * sizeYFactor(gy) * pop, 1);
+    }
+
+    /** Loaded scale multiplier for the current phase: 1 settled, linear 1→0 pop-out, eased 0→1 pop-in. */
+    private _loadMult(): number {
+        if (this._loadPhase === 1) return 1 - this._loadAnimT;        // pop-out (linear)
+        if (this._loadPhase === 2) return this._popScale(this._loadAnimT);   // pop-in (overshoot)
+        return 1;                                                     // settled
+    }
+
+    /** Ease-out-back 0→1 with a slight overshoot, for the scale-up "pop" when a stone loads onto the launcher. */
+    private _popScale(t: number): number {
+        if (t >= 1) return 1;
+        const c1 = 1.70158, c3 = c1 + 1, x = t - 1;
+        return 1 + c3 * x * x * x + c1 * x * x;
     }
 
     update(dt: number): void {
+        this._updateLoadedPop(dt);
+        this._positionLoadedStone();   // keep the resting stone glued to the launcher (survives resize)
+        this._updateNextPop(dt);
         if (!this._aiming) return;
         this._trajPhase = (this._trajPhase + 160 * dt) % 30;
         this._redraw();
+    }
+
+    /** Drive the loaded stone's pop: phase 1 pop-out → (reveal pending type) → phase 2 pop-in. On a
+     *  launch reload the pop-in holds armed for loadPopDelay (the launcher stays empty ~1s); a swap
+     *  is not armed, so it pops straight back in. */
+    private _updateLoadedPop(dt: number): void {
+        if (this._loadPhase === 0) return;
+        const k = dt / Math.max(1e-3, this.loadPopDuration);
+        if (this._loadPhase === 1) {                       // pop out
+            this._loadAnimT = Math.min(1, this._loadAnimT + k);
+            if (this._loadAnimT >= 1) {
+                if (this._pendingLoadType >= 0) { this._loadedRune?.setType(this._pendingLoadType); this._pendingLoadType = -1; }
+                this._loadAnimT = 0; this._loadPhase = 2;
+            }
+        } else {                                           // phase 2: pop in, after the load delay
+            if (this._loadArmed) {
+                this._loadDelayT -= dt;
+                if (this._loadDelayT > 0) return;
+                this._loadArmed = false;
+            }
+            this._loadAnimT = Math.min(1, this._loadAnimT + k);
+            if (this._loadAnimT >= 1) this._loadPhase = 0;
+        }
+    }
+
+    /** NEXT preview sequence. Launch reload: pop OUT → arm the launcher pop-in → wait nextRefillDelay
+     *  → pop the new random gem IN. Swap (tap on NEXT): pop OUT → pop the swapped gem straight back IN. */
+    private _updateNextPop(dt: number): void {
+        const node = this._nextRune?.node;
+        if (this._nextPhase === 0 || !node?.isValid) return;
+        const k = dt / Math.max(1e-3, this.nextPopDuration);
+        if (this._nextPhase === 1) {                       // pop the current gem out (linear shrink)
+            this._nextAnimS = Math.max(0, this._nextAnimS - k);
+            const s = this.nextPreviewScale * this._nextAnimS;
+            node.setScale(s, s, 1);
+            if (this._nextAnimS <= 0) {
+                if (this._nextSwap) {                      // swap: no refill wait, pop the swapped gem straight back in
+                    if (this._pendingNextType >= 0) { this._nextRune!.setType(this._pendingNextType); this._pendingNextType = -1; }
+                    this._nextPhase = 3;
+                } else {                                   // launch reload: NEXT empty → wait the refill, then pop the new gem in
+                    this._nextRefillT = this.nextRefillDelay;
+                    this._nextPhase = 2;
+                }
+            }
+        } else if (this._nextPhase === 2) {                // NEXT empty, waiting to refill
+            this._nextRefillT -= dt;
+            if (this._nextRefillT <= 0) {
+                if (this._pendingNextType >= 0) this._nextRune!.setType(this._pendingNextType);
+                this._nextAnimS = 0;
+                this._nextPhase = 3;
+            }
+        } else {                                           // phase 3: pop the new gem in (eased, overshoot)
+            this._nextAnimS = Math.min(1, this._nextAnimS + k);
+            const s = this.nextPreviewScale * this._popScale(this._nextAnimS);
+            node.setScale(s, s, 1);
+            if (this._nextAnimS >= 1) { this._nextPhase = 0; this._nextSwap = false; }
+        }
     }
 
     private _onTouchStart(e: EventTouch): void { const p = e.getUILocation(); this._beginAim(p.x, p.y); }
@@ -151,8 +281,31 @@ export class StoneLauncher extends Component {
     private _onMouseMove(e: EventMouse):  void { if (this._aiming) { const p = e.getUILocation(); this._updateAim(p.x, p.y); } }
     private _onMouseUp(e: EventMouse):    void { const p = e.getUILocation(); this._release(p.x, p.y); }
 
-    private _beginAim(x: number, y: number): void { this._aiming = true; this._cur.set(x, y); this._resim(); }
+    private _beginAim(x: number, y: number): void {
+        if (this._pointOverNext(x, y)) { this._swapNextAndLoaded(); return; }   // tap the NEXT → swap, never launch
+        this._aiming = true; this._cur.set(x, y); this._resim();
+    }
+
+    /** Tap-on-NEXT: exchange the loaded gem and the NEXT gem, each with the usual pop (both pop out,
+     *  reveal the swapped gem at the bottom, pop back in). Ignored while a pop sequence is in flight. */
+    private _swapNextAndLoaded(): void {
+        if (this._loadPhase !== 0 || this._nextPhase !== 0) return;   // don't interrupt a reload/swap already running
+        const c = this._currentType;
+        this._currentType = this._nextType;
+        this._nextType = c;
+        this._pendingLoadType = this._currentType;   // loaded pops out then reveals the (new) current gem
+        this._loadPhase = 1; this._loadAnimT = 0; this._loadArmed = false;
+        this._pendingNextType = this._nextType;      // NEXT pops out then reveals the (new) next gem
+        this._nextSwap = true; this._nextPhase = 1;
+    }
     private _updateAim(x: number, y: number): void { if (!this._aiming) return; this._cur.set(x, y); this._resim(); }
+
+    /** True if a UI point falls inside the NEXT preview's box (so it can be excluded from aiming). */
+    private _pointOverNext(uiX: number, uiY: number): boolean {
+        const ut = this.nextPreview?.getComponent(UITransform);
+        if (!ut?.node?.isValid) return false;
+        return ut.getBoundingBoxToWorld().contains(_tmp2.set(uiX, uiY));
+    }
 
     private _release(x: number, y: number): void {
         if (!this._aiming) return;
@@ -180,10 +333,18 @@ export class StoneLauncher extends Component {
             gemType: this._currentType,
             name: 'LaunchedStone',
         });
-        // advance the queue: NEXT becomes current, draw a new NEXT
+        // advance the queue: NEXT becomes current, pick a new NEXT
         this._currentType = this._nextType;
         this._nextType = this._randomType();
-        this._nextRune?.setType(this._nextType);
+        this._pendingNextType = this._nextType;
+        // NEXT: pop the current gem OUT (launch mode, not a swap). Its completion arms the launcher
+        // pop-in, then after nextRefillDelay the new NEXT gem pops in — see _updateNextPop.
+        this._nextSwap = false; this._nextPhase = 1;
+        // Loaded stone: set the new current type but keep it collapsed; it pops in (disarmed) only
+        // when the NEXT has finished popping out.
+        this._loadedRune?.setType(this._currentType);
+        this._loadPhase = 2; this._loadAnimT = 0; this._loadArmed = true; this._loadDelayT = this.loadPopDelay;
+        this._positionLoadedStone();   // collapse to scale 0 now (no 1-frame full-size flash)
     }
 
     private _abort(): void { this._aiming = false; this._path = []; this._clearPreview(); if (this.launcherNode) this.launcherNode.angle = 0; }
@@ -333,6 +494,8 @@ export class StoneLauncher extends Component {
         if (total < 0.001) return;
         const step = 30, dotR = 8;
         const col = this._dotColor;                 // reused; only alpha changes per dot
+        const tint = this.gemColors[this._currentType];   // dots match the gem about to fire
+        if (tint) { col.r = tint.r; col.g = tint.g; col.b = tint.b; }
         let phase = this._trajPhase, cum = 0;
         let fpy = physPts[0].y, fvx = projectX(physPts[0].x, fpy), fvy = projectY(fpy);
         for (let i = 1; i < n; i++) {
@@ -344,7 +507,7 @@ export class StoneLauncher extends Component {
                 let dist = phase;
                 while (dist < segLen) {
                     const t = dist / segLen;
-                    col.a = Math.round(200 * (1 - (cum + dist) / total));
+                    col.a = Math.round(120 + 110 * (1 - (cum + dist) / total));   // floor 120: the long tail stays clearly visible → trajectory reads much longer
                     g.fillColor = col;
                     const py = fpy + (tpy - fpy) * t;   // depth at this dot
                     const rx = dotR * sizeXFactor(py);  // shrink with depth; 0.5 = ground tilt → flat disc
@@ -366,6 +529,7 @@ export class StoneLauncher extends Component {
         n.layer = this.arena.layer;
         n.setParent(this.arena);
         n.setPosition(0, 0, 0);
+        n.setSiblingIndex(this.node.getSiblingIndex());   // render BEHIND the launcher (just below it in z-order)
         this._preview = n.addComponent(Graphics);
         return this._preview;
     }

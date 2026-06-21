@@ -34,7 +34,7 @@ const { ccclass, property } = _decorator;
  *  (off on GameDistribution per §7). Gates end-game routing + name-entry prep. */
 const LEADERBOARD_ENABLED = LEADERBOARD_CONFIG_ENABLED && LEADERBOARD_ALLOWED;
 
-export const VERSION     = '0.1.22';
+export const VERSION     = '0.1.23';
 /** Dedicated leaderboard scene; the game-over flow hands the score off to it. */
 const RANKING_SCENE      = 'Ranking';
 /** Main menu scene — target of the Menu buttons on the pause/end panels. */
@@ -42,7 +42,7 @@ const MAIN_MENU_SCENE    = 'MainMenu';
 /** Delay before the game-over / victory panel fades in, so the end moment (shake/cascade) plays first. */
 const END_PANEL_DELAY    = 1.0;
 const DEBUG              = false;
-const DEBUG_ENGINE       = true;
+const DEBUG_ENGINE       = false;
 const SHOW_ENDLINE_DEBUG = false;  // set true to draw the purple dashed game-over threshold line (debug)
 const LIVE_RESIZE        = true;   // real-time relayout on browser resize — kept on in production too (negligible cost, fires only on resize)
 const TEST_FIRST_LAUNCH_GAMEOVER = false; // TEST: first launch forces game-over @15k to exercise the leaderboard flow
@@ -3483,32 +3483,11 @@ export class GameManager extends Component implements IGameManagerDebug {
         this.vfx.showRoundUpBanner(this.currentRound, silhouetteFrame);
     }
 
-    private updateNextPreview(animate = false): void {
-        if (!this.nextPreviewNode?.isValid) return;
-        const { type, level } = this.spawnMgr.next;
-        const frame = WarriorSpriteCache.get(WARRIORS[type]?.type ?? '', level);
-
-        if (!this.nextNextWarriorNode?.isValid) {
-            const icon = new Node('NextWarrior');
-            icon.setParent(this.nextPreviewNode);
-            icon.addComponent(UITransform).setContentSize(100, 100);
-            this.nextNextWarriorNode = icon;
-        }
-        const sp = this.nextNextWarriorNode.getComponent(Sprite) ?? this.nextNextWarriorNode.addComponent(Sprite);
-        sp.sizeMode = Sprite.SizeMode.CUSTOM;
-        sp.spriteFrame = frame ?? null!;
-
-        if (animate) {
-            Tween.stopAllByTarget(this.nextNextWarriorNode);
-            this.nextNextWarriorNode.setScale(0.05, 0.05, 1);
-            tween(this.nextNextWarriorNode)
-                .to(0.18, { scale: new Vec3(1.22, 1.22, 1) }, { easing: 'quadOut' })
-                .to(0.08, { scale: new Vec3(0.93, 0.93, 1) })
-                .to(0.07, { scale: new Vec3(1.0,  1.0,  1) })
-                .start();
-        }
-
-        this._updateNextPreviewPowerupGlow();
+    private updateNextPreview(_animate = false): void {
+        // NEXT preview is now owned by StoneLauncher (shows the upcoming Rune gem).
+        // The legacy FunWarriors warrior icon is no longer loaded into the NEXT slot.
+        // (Kept as a no-op so the many existing call sites stay valid; the powerup-glow
+        //  and zoom helpers self-guard on nextNextWarriorNode?.isValid and go silent.)
     }
 
     private _updateNextPreviewPowerupGlow(): void {

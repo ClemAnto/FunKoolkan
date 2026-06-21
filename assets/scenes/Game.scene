@@ -872,7 +872,7 @@
         "__id__": 22
       }
     ],
-    "_active": false,
+    "_active": true,
     "_components": [
       {
         "__id__": 25
@@ -884,8 +884,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 0,
-      "y": 90,
+      "x": -302.281,
+      "y": 266.4,
       "z": 0
     },
     "_lrot": {
@@ -933,7 +933,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0,
-      "y": 0,
+      "y": -11.422,
       "z": 0
     },
     "_lrot": {
@@ -945,9 +945,9 @@
     },
     "_lscale": {
       "__type__": "cc.Vec3",
-      "x": 1,
-      "y": 1,
-      "z": 1
+      "x": 0.839,
+      "y": 0.588,
+      "z": 0.839
     },
     "_mobility": 0,
     "_layer": 33554432,
@@ -971,13 +971,13 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 120,
-      "height": 83
+      "width": 128,
+      "height": 128
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
       "x": 0.5,
-      "y": 1
+      "y": 0.5
     },
     "_id": "d6wrN7+W1LPJ1015mRl83p"
   },
@@ -1002,7 +1002,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "424a10f8-b99d-4b8f-b108-73ace9586a53@f9941",
+      "__uuid__": "76feb2f2-4e96-4eb8-a62c-f7bb59882ab8@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
@@ -1056,10 +1056,10 @@
     "_target": {
       "__id__": 6
     },
-    "_left": 20,
+    "_left": -73.281,
     "_right": 0,
     "_top": 0,
-    "_bottom": 20,
+    "_bottom": 216.39999999999998,
     "_horizontalCenter": 0,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
@@ -1520,8 +1520,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 0,
-      "y": 0,
+      "x": 1.1368683772161603e-13,
+      "y": -0.00011979166674791486,
       "z": 0
     },
     "_lrot": {
@@ -1533,9 +1533,9 @@
     },
     "_lscale": {
       "__type__": "cc.Vec3",
-      "x": 1.113,
-      "y": 1.113,
-      "z": 0.696
+      "x": 1.245,
+      "y": 1.245,
+      "z": 0.778
     },
     "_mobility": 0,
     "_layer": 1073741824,
@@ -2351,10 +2351,17 @@
     "stoneRestitution": 0.04,
     "stoneFriction": 0.3,
     "stoneDamping": 0.5,
-    "debugStones": true,
-    "nextPreview": null,
-    "numGemTypes": 2,
-    "nextPreviewScale": 0.6,
+    "debugStones": false,
+    "nextPreview": {
+      "__id__": 21
+    },
+    "numGemTypes": 3,
+    "gemColors": [],
+    "nextPreviewScale": 0.4,
+    "loadedScaleFactor": 0.85,
+    "loadPopDuration": 0.22,
+    "nextPopDuration": 0.18,
+    "nextRefillDelay": 0.5,
     "_id": "ST00StoneLauncher000"
   },
   {
@@ -2445,7 +2452,7 @@
     "wallThickness": 18,
     "restitution": 0.4,
     "friction": 0.1,
-    "showDebugOutline": true,
+    "showDebugOutline": false,
     "_id": "ST00ArenaBounds00000"
   },
   {

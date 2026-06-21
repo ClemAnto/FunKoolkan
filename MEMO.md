@@ -12,7 +12,7 @@
 - `depthScale(yp)=1/(1+a·clamp(yp/D))`; `projectX=xp·s`; `projectY=Yhor·(1−s)`; `sizeXFactor=s`; `sizeYFactor=s·(1−Yforeshorten·(1−s))`; `unprojectX/unprojectY` = inverse (guard clamp su sFar/1, no NaN).
 - **Ground space**: i corpi Box2D vivono in `[−W/2,W/2]×[0,D]`. `ArenaBounds` costruisce il rim **direttamente in ground space**; i muri SONO quei punti (niente de-proiezione); `boundaryPhysics` = rim ground; debug + `boundaryImage` = rim **proiettato avanti** (projectX/projectY) → trapezio visibile.
 
-**Stone** (`entities/Stone.ts`): posizione via projectX/projectY; scala vista `(ws·vs·sizeX, ws·vs·sizeY)` (anisotropa); corpo ruota (`fixedRotation=false`); `rotationNode.angle = this.node.angle` (1 riga, copia diretta del corpo → nodo `Rune>gem>rotation`).
+**Stone** (`entities/Stone.ts`): posizione via projectX/projectY; scala vista `(ws·vs·sizeX, ws·vs·sizeY)` (anisotropa); corpo ruota (`fixedRotation=false`); `rotationNode.angle = this._zAngleDeg()` → angolo Z pieno **±180** ricavato dal **quaternione** del corpo con `atan2(2(wz+xy), 1−2(y²+z²))·180/π` (NON `this.node.angle`, che ripiega a ±90 — vedi gotcha). Stesso helper usato dal gizmo di debug.
 
 **StoneLauncher** (`entities/StoneLauncher.ts`): slingshot **ancorato al nodo launcher** (spawn + traiettoria + direzione derivati dalla sua posizione). Spawn = `unprojectX/Y(launcher pos)`; velocità via `_groundDir(eff)` (Jacobian dell'inversa con passo ε, perché l'omografia accoppia X/Y); traiettoria simulata in ground space su `boundaryPhysics` inset di `stoneRadius`; pallini disegnati **piatti** (ellisse 0.5 ground-tilt).
 
@@ -32,13 +32,21 @@
 | muri `restitution`/`friction` | 0.4 / 0.1 | |
 
 ### Gotcha (questa sessione)
-- **Rotazione gemma "strana" = SHEAR**: il nodo `rotation` è figlio di scale ANISOTROPE (`gem.scale.y=0.5` nel prefab **+** la `sizeYFactor` del modello B). Una rotazione dentro scala non uniforme viene renderizzata sheared (la copia dell'angolo è giusta, è il motore). Una rotazione rigida richiede scala **uniforme** sugli antenati → conflitto col foreshorten. **Decisione di design APERTA**: (A) arte gemma piatta/radiale, (B) split base-squashata + gemma-uniforme, (C) niente rotazione. (Anchor tutti 0.5/0.5 → non è pivot.)
+- **`node.angle` ripiega a [−90,+90] (asin)**: il getter `Node.angle`/`eulerAngles` decodifica il quaternione via `Quat.toEuler`, dove la componente Z passa per `Math.asin` → range [−90,90]. Vale SOLO in **lettura** da un quaternione (es. corpo Box2D); scrivendo `angle =` il valore si memorizza intero. **Per leggere il giro pieno ±180 da un nodo 2D usa `atan2`** dal quaternione: `atan2(2(wz+xy), 1−2(y²+z²))` (per Z-puro = `atan2(sinθ,cosθ)=θ`). — **Era questo il falso "ruota solo ±90"**: la runa girava bene; era la **linea-raggio del gizmo `StoneDebug`** che leggeva `node.angle` (folded). Fix in `_drawDebug` + `rotationNode` via `_zAngleDeg()`.
+- **Shear da scala anisotropa (resta APERTO, separato)**: il nodo `rotation` è figlio di scale anisotrope (`gem.scale.y=0.5` + `sizeYFactor`). Una rotazione dentro scala non uniforme si renderizza sheared (giro completo ma distorto, NON un fold). Rotazione rigida = scala uniforme sugli antenati → conflitto col foreshorten. Decisione di design: (A) arte gemma piatta/radiale, (B) split base/gemma, (C) niente rotazione.
 - **`view.getVisibleSize()` in CC3.8 NON ha overload out-param**: passarne uno lo ignora e il buffer resta (0,0) → arena scalata a ~0 (sparisce con Background, che è figlio di Arena). Usare il valore di ritorno.
-- **Box2D debug nativo**: disegna i collider cerchio SENZA linea raggio/angolo → la rotazione non si vede. Usare l'overlay `StoneDebug` (`StoneLauncher.debugStones=true`) che disegna ellisse + raggio rotante.
+- **Box2D debug nativo**: disegna i collider cerchio SENZA linea raggio/angolo. L'overlay `StoneDebug` (`StoneLauncher.debugStones`) disegna ellisse + raggio rotante (ora con `_zAngleDeg()`, ±180). **In scena tutti i debug sono OFF** (`debugStones=false`, `ArenaBounds.showDebugOutline=false`).
 - **Rename**: nodi scena `Crossbow→StoneLauncher`, `CrossbowBase→StoneLauncherBase`, `CrossbowLauncher→StoneLauncherArm`. `InputController.ts` (legacy, inerte) fa ancora `getChildByName('Crossbow')` → warning innocuo + resta disabilitato. **Da ritirare.**
 
-### NEXT (ripristinato, da cablare in editor)
-Tipo gemma casuale a ogni lancio (`numGemTypes=2`) + anteprima del prossimo (coda current→next). Richiede in editor: `StoneLauncher.nextPreview` → nodo **NextPreview** (riattivarlo), e `Rune.gems` = [gem_green(0), gem_yellow(1)].
+### NEXT + feel launcher (pop / timing / swap / traiettoria)  *(v0.1.23)*
+Tipo gemma casuale a ogni lancio (`numGemTypes=3`) + anteprima del prossimo (coda current→next). Editor: `StoneLauncher.nextPreview` → nodo **NextPreview**, `Rune.gems` = [gem_green(0), gem_yellow(1), gem_red(2)].
+
+- **Pop**: macchine a fasi (no `tween`, perché `_positionLoadedStone` setta la scala ogni frame e schiaccerebbe il tween). Loaded: `_loadPhase` settled/pop-out/pop-in, multiplier ease-out-back `_popScale`. NEXT: `_nextPhase` pop-out→(attesa)→pop-in. Helper `_loadMult()`/`_popScale()`.
+- **Timing lancio**: al release il loaded resta a scala 0 (launcher vuoto) e fa pop-in dopo **`loadPopDelay=1.0s`** (`_loadDelayT`, gate su `_loadArmed`). Il NEXT pop-out parte subito; refill nuova gemma dopo **`nextRefillDelay=0.5s`** dal pop-out (→ il NEXT si ripopola PRIMA che il loaded si carichi: ordine voluto al 2026-06-21).
+- **Swap (tap sul NEXT)**: `_pointOverNext` (bbox UITransform vs `getUILocation`) intercetta il tap → **niente lancio**; `_swapNextAndLoaded()` scambia current↔next con pop su entrambi (`_nextSwap=true` = pop-in immediato, salta il refill delay). Ignorato se un'animazione è in corso.
+- **No spin al lancio**: rimossa `launchSpin` e `angularVelocity` dallo spawn (il corpo non riceve spin; ruota solo per gli urti).
+- **Dot traiettoria**: colore = gemma corrente via `gemColors[]` (default verde/giallo/rosso, override in editor). `AimPreview` renderizzato **dietro al launcher** (`setSiblingIndex(this.node.getSiblingIndex())`). Lunghezza: `SIM_MAX_STEPS=3000` (era il vero limite, non la velocità), `SIM_MIN_SPEED=2`, alpha floor **120** (coda ben visibile).
+- **Scale**: `nextPreviewScale=0.4` (scena), `loadedScaleFactor=0.85` (loaded un po' più piccolo del lanciato), `loadPopDuration=0.22`, `nextPopDuration=0.18`.
 
 ---
 

@@ -45,9 +45,17 @@ export class Stone extends Component {
         const ws = arena.worldScale, s = this.viewScale;
         view.setWorldScale(ws.x * s * sizeXFactor(p.y), ws.y * s * sizeYFactor(p.y), 1);
         // Mirror the physics body's spin onto the designated inner node (base stays upright).
-        if (this.rotationNode?.isValid) this.rotationNode.angle = this.node.angle;
+        if (this.rotationNode?.isValid) this.rotationNode.angle = this._zAngleDeg();
         if (Stone.debugDraw) this._drawDebug(p);
         else if (this._dbg?.isValid) this._dbg.clear();
+    }
+
+    /** Full ±180 Z rotation of the body in degrees. Box2D is 2D → the body's rotation is a pure-Z
+     *  turn; decode it from the quaternion with atan2 (full range), NOT via node.angle whose getter
+     *  uses asin and folds to [-90,90]. */
+    private _zAngleDeg(): number {
+        const r = this.node.rotation;
+        return Math.atan2(2 * (r.w * r.z + r.x * r.y), 1 - 2 * (r.y * r.y + r.z * r.z)) * 180 / Math.PI;
     }
 
     /** Lazily create a shared debug layer as the LAST child of the arena's parent (above
@@ -86,7 +94,7 @@ export class Stone extends Component {
         const g = this._dbg, r = this.radius;
         const cx = projectX(p.x, p.y), cy = projectY(p.y);
         const rx = r * sizeXFactor(p.y), ry = rx * 0.5;   // 0.5 = ground tilt → flat disc on the floor
-        const th = this.node.angle * Math.PI / 180;
+        const th = this._zAngleDeg() * Math.PI / 180;     // full ±180 (node.angle would fold to ±90 → fake wobble)
         g.clear();
         g.ellipse(cx, cy, rx, ry);
         g.moveTo(cx, cy);
@@ -111,6 +119,7 @@ export class Stone extends Component {
         viewPrefab: Prefab | null;
         pos: Vec2;            // arena-local (de-squashed)
         velocity: Vec2;       // arena-local (de-squashed)
+        angularVelocity?: number;   // launch spin (deg/s); decays via angularDamping
         radius: number;
         restitution?: number;
         friction?: number;
@@ -145,6 +154,7 @@ export class Stone extends Component {
         col.apply();
 
         rb.linearVelocity = o.velocity;
+        if (o.angularVelocity) rb.angularVelocity = o.angularVelocity;   // deg/s; decays via angularDamping
 
         if (o.viewPrefab && o.layer) {
             const view = instantiate(o.viewPrefab) as unknown as Node;
