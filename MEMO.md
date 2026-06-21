@@ -52,16 +52,19 @@ Tre classi specializzate + un coordinatore (no monoliti — vedi memoria feedbac
 - **Dot traiettoria** (StoneLauncher): colore = gemma caricata via `gemColors[]`; `AimPreview` dietro al launcher; `SIM_MAX_STEPS=3000`, `SIM_MIN_SPEED=2`, alpha floor **120**.
 - **Scale**: `NextPreview.previewScale=0.4`, `loadedScaleFactor=0.85`, `loadPopDuration=0.22`, `NextPreview.popDuration=0.18`, `numGemTypes=3` (su ArenaManager). Editor `Rune.gems`=[gem_green(0),gem_yellow(1),gem_red(2)].
 
-### Magnetismo / classe `Magnet`  *(2026-06-21 — fondamenta circuito di mana)*
-Classe unica `entities/Magnet.ts` che incapsula il comportamento "calamita", su due tipi:
-- **Polo** (`isPole`, dawn/sunset): `Magnet` **attaccato al nodo in EDITOR** (@property `isPole`/`arena`/`radius`/`poleRestitution`/`poleFriction`). Attrae **qualsiasi** stone; possiede un **corpo circolare KINEMATIC** sotto l'Arena (ground space) → le stone ci si appoggiano; ri-pinnato a ogni solve (sopravvive al resize).
-- **Stone**: `Magnet` aggiunto a runtime in `Stone.spawn` (via `Magnet.attach`). Diventa calamita **solo quando `connected`** (catena monocromatica che tocca un polo) → attrae **solo lo stesso colore**.
-
-**Connettività** = BFS sul contact-graph in ground space (`Magnet.solve`): seed = stone entro `contactGap` da un polo (qualsiasi colore) → espansione a stone dello **stesso `gemType`**. Ricalcolata ogni frame.
-**Forze**: `applyForceToCenter`, normalizzate 60fps (`dt × FORCE_FPS_REF` in **`ArenaManager.update`** → `Magnet.solve`). Pull **monodirezionale** (solo `0 < gap ≤ attractGap`, mai spinta oltre il contatto) con rampa forte al contatto `×(1+t²·hold)` → coppie attaccate difficili da separare. Le `connected` ricevono `linearDamping=settleDamping`; le altre `flightDamping`.
-**Coordinate (gotcha)**: corpi stone figli di Arena → `node.position`=ground. Poli nello stone layer (proiettato): ground = `arena.worldMatrix⁻¹ × pole.worldPosition` → `unprojectX/Y`. Tutto in ground px (isotropo: Arena FitScale uniforme).
-**Driver/registry**: i `Magnet` si auto-registrano (`Magnet._all`, onEnable/onDisable); `ArenaManager.update` chiama `Magnet.solve()` 1×/frame; `onDisable` distrugge il `PoleBody` proxy.
-**Tunable di sistema** (`@property` su ArenaManager): `magnetRange=100`, `magnetForce=600`, `magnetHold=14`, `magnetContactGap=16`, `magnetSettleDamping=6`. **Per-polo** (`@property` su Magnet): `radius=60`, `poleRestitution=0`, `poleFriction=0.3`. Da tarare in play.
+### Magnetismo / classe `Magnet` — modello "PETRIFICAZIONE"  *(2026-06-21)*
+Classe unica `entities/Magnet.ts`. **Modello deterministico** (NON forza-che-tiene, che oscillava al confine della dead-zone → loop connesso/staccato infinito + jitter; il joint invece teletrasportava per gli anchor):
+- **Polo** (`isPole`, dawn/sunset): `Magnet` **attaccato al nodo in EDITOR** (@property `isPole`/`arena`/`radius`/`poleRestitution`/`poleFriction`). Attrae **qualsiasi** stone; corpo **KINEMATIC** `PoleBody` sotto l'Arena (ground space), ri-pinnato a ogni solve.
+- **Stone libera** (Dynamic): grab a **CORTO raggio** — tirata verso il magnete valido **PIÙ VICINO** (polo qualsiasi colore, o stone **magnetizzata stesso colore**) solo entro `attractGap` (default **12** = pochi px oltre la circonferenza), **un solo target** → niente tiro-alla-fune. Per lo più ci arriva per collisione (i magneti sono solidi). Forza `attractForce·(1−gap/attractGap)`, `dt×60`.
+- **Petrificazione (ritardata)**: nella zona di contatto (`gap ≤ snapGap`) NON tira più → la stone si assesta; quando è **near-still** (`speed ≤ petrifyMaxSpeed=8`) per **`petrifyDelay=2s`** (timer `_magnetT`, azzerato se si muove o esce) → si aggancia: **snap sul contorno** (`parent + dir·(rP+rS)`), `rb.type=Static` (immobile/frozen), `parent` registrato, `connected=true`. Da lì **insensibile a tutti gli altri magneti**.
+- **Albero**: ogni stone magnetizzata ha `parent` (polo o stone) → foresta radicata ai poli. Disegno debug `debugTree` (linee stone→parent, overlay sopra gli sprite). `onDisable` orfana i figli.
+- **Repel** (`@property repel`, magnet inverso): spinge via le stone **libere** entro `repelRange`; non attrae, non tocca le pietrificate (Static).
+- ⚠️ **Rottura per impatto** (richiesta prima): NON nel modello petrify (Static = immovabile) — accantonata per semplificare; si riadderebbe con un "un-petrify" su impulso forte.
+**Coordinate**: corpi stone figli di Arena → `node.position`=ground; polo = `PoleBody` de-proiettato `arena.worldMatrix⁻¹ × pole.worldPos` → `unprojectX/Y`.
+**Driver/registry**: `Magnet._all` (onEnable/onDisable); `ArenaManager.update` → `Magnet.solve(dt×60)`.
+**Tunable di sistema** (`@property` ArenaManager): `magnetRange=12`(attractGap, pochi px!), `magnetForce=600`, `snapGap=3`(soglia "bordi che si toccano" → timer petrify), `petrifyDelay=2`(s), `petrifyMaxSpeed=8`, `repelRange=120`, `repelForce=800`, `debugLog`, `debugTree`. **Per-Magnet** (`@property`): `isPole`, `repel`, `radius=60`, `poleRestitution=0`, `poleFriction=0.3`, `showDebugCircle`. `Magnet.solve(dt)` (normalizza a 60fps internamente). **Modello = SuperSlide15** (forza solo lontano, NIENTE forza al contatto → niente press-jitter; lo "snap duro" loro = la nostra petrify). Da tarare in-engine.
+> `StoneLauncher.trajectoryLength` (@property, px-schermo, 0=path intero) limita la lunghezza visibile della traiettoria; sim estesa (`SIM_MIN_SPEED=0.5`), pallini più grandi/luminosi.
+> Cambio body Dynamic→Static a runtime in petrify: ok in Cocos (`rb.type=Static`); il collider resta (le libere ci sbattono). Riportare a Dynamic per dissolvere/reshape (futuro).
 
 ### Editor — wiring richiesto dal refactor (2026-06-21)
 1. `Magnet` su **dawn** e **sunset**: `isPole=true`, `arena`→Arena, `radius`~60. (body invisibile: il moai resta la vista autorata)

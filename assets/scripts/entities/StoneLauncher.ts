@@ -8,8 +8,8 @@ const { ccclass, property } = _decorator;
 
 const MAX_AIM_ANGLE = 67.5 * Math.PI / 180;   // aim cone from straight-up (±75% toward horizontal)
 const SIM_DT = 1 / 60;
-const SIM_MAX_STEPS = 3000;
-const SIM_MIN_SPEED = 2;
+const SIM_MAX_STEPS = 6000;
+const SIM_MIN_SPEED = 0.5;   // simulate further into the slow tail → longer, more visible trajectory
 const SIM_REST_THRESHOLD = 20;
 const SIM_RECORD_DIST = 18;
 const _tmp = new Vec3();
@@ -66,6 +66,8 @@ export class StoneLauncher extends Component {
     maxDrag = 300;
     @property({ type: CCFloat, slide: true, range: [0, 1, 0.05], tooltip: 'How much the bow arm follows the aim (1 = full, 0.5 = half).' })
     bowFollowFactor = 0.5;
+    @property({ type: CCFloat, tooltip: 'Visible trajectory length in SCREEN px (0 = the whole simulated path, until the stone stops).' })
+    trajectoryLength = 0;
 
     @property({ type: CCFloat, slide: true, range: [0, 1, 0.01], tooltip: 'Stone restitution (mixed with the wall as max()).' })
     stoneRestitution = 0.04;
@@ -423,7 +425,8 @@ export class StoneLauncher extends Component {
             pvx = vx; pvy = vy;
         }
         if (total < 0.001) return;
-        const step = 30, dotR = 8;
+        const step = 26, dotR = 11;
+        const maxLen = this.trajectoryLength > 0 ? Math.min(this.trajectoryLength, total) : total;   // visible-length cap
         const col = this._dotColor;                 // reused; only alpha changes per dot
         const tint = this.gemColors[this._loadedType];   // dots match the gem about to fire
         if (tint) { col.r = tint.r; col.g = tint.g; col.b = tint.b; }
@@ -437,8 +440,9 @@ export class StoneLauncher extends Component {
                 const ux = ex / segLen, uy = ey / segLen;
                 let dist = phase;
                 while (dist < segLen) {
+                    if (cum + dist >= maxLen) break;   // reached the visible-length cap (trajectoryLength)
                     const t = dist / segLen;
-                    col.a = Math.round(120 + 110 * (1 - (cum + dist) / total));   // floor 120: the long tail stays clearly visible → trajectory reads much longer
+                    col.a = Math.round(165 + 75 * (1 - (cum + dist) / maxLen));   // floor 165: the tail stays clearly visible
                     g.fillColor = col;
                     const py = fpy + (tpy - fpy) * t;   // depth at this dot
                     const rx = dotR * sizeXFactor(py);  // shrink with depth; 0.5 = ground tilt → flat disc
@@ -448,6 +452,7 @@ export class StoneLauncher extends Component {
                 }
                 phase = Math.max(0, dist - segLen);
                 cum += segLen;
+                if (cum >= maxLen) break;   // stop drawing past the visible-length cap
             }
             fpy = tpy; fvx = tvx; fvy = tvy;
         }

@@ -3,7 +3,7 @@ import { _decorator, Component } from 'cc';
 const { ccclass } = _decorator;
 
 /** Game version — keep aligned with package.json (see CLAUDE.md §Versioning). */
-export const VERSION = '0.1.24';
+export const VERSION = '0.1.25';
 
 /**
  * FunKoolkan game manager — PLACEHOLDER (intentionally near-empty).

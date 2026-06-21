@@ -5,8 +5,6 @@ import { NextPreview } from '../entities/NextPreview';
 
 const { ccclass, property } = _decorator;
 
-const FORCE_FPS_REF = 60;   // per-frame magnet forces scaled by (dt × this) so integration matches 60 fps
-
 /**
  * FunKoolkan gameplay coordinator for the arena. Two jobs:
  *
@@ -28,27 +26,39 @@ export class ArenaManager extends Component {
     @property({ type: CCInteger, tooltip: 'Number of gem types (random pick per launch).' })
     numGemTypes = 3;
 
-    @property({ type: CCFloat, tooltip: 'Magnet attraction range — surface-surface GROUND px within which stones are pulled.' })
-    magnetRange = 100;
-    @property({ type: CCFloat, tooltip: 'Magnet base pull force (tune in play).' })
+    @property({ type: CCFloat, tooltip: 'Grab range — surface-surface GROUND px beyond the circumference within which a free stone is pulled (keep SMALL, a few px).' })
+    magnetRange = 12;
+    @property({ type: CCFloat, tooltip: 'Attraction pull strength (stronger as a stone nears contact).' })
     magnetForce = 600;
-    @property({ type: CCFloat, tooltip: 'Contact-hold ramp: pull = force×(1 + t²·hold), t→1 at contact. Higher = harder to separate attached stones.' })
-    magnetHold = 14;
-    @property({ type: CCFloat, tooltip: 'Surface-surface GROUND px counted as "connected/touching" (chain conductivity threshold).' })
-    magnetContactGap = 16;
-    @property({ type: CCFloat, slide: true, range: [0, 16, 0.5], tooltip: 'linearDamping applied to a connected stone (settles clusters so they hardly drift apart).' })
-    magnetSettleDamping = 6;
+    @property({ type: CCFloat, tooltip: 'Touch gap — surface-surface GROUND px counted as "edges touching": only here does the petrify timer run.' })
+    snapGap = 3;
+    @property({ type: CCFloat, tooltip: 'Seconds a stone must stay in the magnetism zone NEAR-STILL before it petrifies (attaches).' })
+    petrifyDelay = 2;
+    @property({ type: CCFloat, tooltip: 'Ground units/s: at or below this speed a stone counts as "near-still" for the petrify timer.' })
+    petrifyMaxSpeed = 8;
+    @property({ type: CCFloat, tooltip: 'Repel range — surface-surface GROUND px within which a repel magnet pushes free stones away.' })
+    repelRange = 120;
+    @property({ type: CCFloat, tooltip: 'Repel push strength.' })
+    repelForce = 800;
+    @property({ tooltip: 'Log petrify events + a periodic tree summary to the console (diagnostics).' })
+    debugLog = false;
+    @property({ tooltip: 'Draw the magnetized tree (links from each petrified stone to its parent) for debug.' })
+    debugTree = false;
 
     private _currentType = 0;   // gem loaded on the launcher (fires next)
     private _nextType = 0;      // gem shown in the NEXT preview
 
     start(): void {
         // 1. System-wide magnet tuning (poles self-register via their editor Magnet; stones at spawn).
-        Magnet.attractGap    = this.magnetRange;
-        Magnet.contactGap    = this.magnetContactGap;
-        Magnet.force         = this.magnetForce;
-        Magnet.hold          = this.magnetHold;
-        Magnet.settleDamping = this.magnetSettleDamping;
+        Magnet.attractGap      = this.magnetRange;
+        Magnet.attractForce    = this.magnetForce;
+        Magnet.snapGap         = this.snapGap;
+        Magnet.petrifyDelay    = this.petrifyDelay;
+        Magnet.petrifyMaxSpeed = this.petrifyMaxSpeed;
+        Magnet.repelRange      = this.repelRange;
+        Magnet.repelForce      = this.repelForce;
+        Magnet.debugLog        = this.debugLog;
+        Magnet.debugTree       = this.debugTree;
 
         // 2. Launch queue: own current/next and wire the launcher ↔ NEXT interaction.
         this._currentType = this._randomType();
@@ -62,7 +72,7 @@ export class ArenaManager extends Component {
     }
 
     update(dt: number): void {
-        Magnet.solve(dt * FORCE_FPS_REF);   // mana-circuit magnetism (poles + connected same-colour stones)
+        Magnet.solve(dt);   // mana-circuit magnetism (attract → petrify; Magnet normalises forces to 60 fps internally)
     }
 
     private _randomType(): number { return Math.floor(Math.random() * Math.max(1, this.numGemTypes)); }
