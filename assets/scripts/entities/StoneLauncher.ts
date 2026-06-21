@@ -1,9 +1,9 @@
-import { _decorator, Component, Node, Vec2, Vec3, UITransform, input, Input, EventTouch, EventMouse, CCFloat, Prefab, Graphics, Color, instantiate } from 'cc';
+import { _decorator, Component, Node, Vec2, Vec3, UITransform, input, Input, EventTouch, EventMouse, CCFloat, Prefab, Graphics, Color, instantiate, RigidBody2D, ERigidBody2DType, CircleCollider2D } from 'cc';
 import { Stone } from './Stone';
 import { Rune } from './Rune';
 import { ArenaBounds } from './ArenaBounds';
 import { RUNES } from '../config/RuneTypes';
-import { projectX, projectY, sizeXFactor, sizeYFactor, unprojectX, unprojectY } from '../config/Perspective';
+import { projectX, projectY, sizeXFactor, sizeYFactor, unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
 
 const { ccclass, property } = _decorator;
 
@@ -13,6 +13,12 @@ const SIM_MAX_STEPS = 6000;
 const SIM_MIN_SPEED = 0.5;   // simulate further into the slow tail → longer, more visible trajectory
 const SIM_REST_THRESHOLD = 20;
 const SIM_RECORD_DIST = 18;
+// Aim-guide reference physics — DELIBERATELY independent of the real launch force (launchSpeed) and the
+// real stone drag (stoneDamping), so lowering the force or adding friction never changes how long the
+// dotted guide looks. The path SHAPE (direction + bounces) is speed-independent and still uses the real
+// wall bounce, so the guide stays an honest direction predictor; only its length is pinned here.
+const PREVIEW_SPEED = 200;     // reference full-power launch speed for the guide
+const PREVIEW_DAMPING = 0.5;   // reference stone damping for the guide
 const _tmp = new Vec3();
 
 interface Seg { ax: number; ay: number; bx: number; by: number; nx: number; ny: number; }
@@ -39,8 +45,8 @@ function raySegT(ox: number, oy: number, dx: number, dy: number, ax: number, ay:
  * Anchored at the launcher node: its position drives the spawn point, the trajectory origin and the
  * launch direction (SLINGSHOT: opposite the pull, ±67.5° cone; power ∝ pull distance). Everything is
  * computed in arena-local space; the spawn point is de-projected via unprojectX/Y and the velocity via
- * _groundDir (the homography couples X and Y). The preview integrates the SAME physics as the launched
- * stone, so it tracks reality.
+ * _groundDir (the homography couples X and Y). The preview predicts the real DIRECTION and bounces; its
+ * LENGTH is a fixed reference (PREVIEW_SPEED/DAMPING) so changing the launch force/friction never resizes it.
  */
 @ccclass('StoneLauncher')
 export class StoneLauncher extends Component {
@@ -79,6 +85,11 @@ export class StoneLauncher extends Component {
     @property({ tooltip: 'Debug: draw a flat ellipse + rotation radius on each launched stone.' })
     debugStones = false;
 
+    @property({ type: CCFloat, tooltip: 'Size of the launcher\'s solid base (ground px) — stones in play bounce off it.' })
+    launcherRadius = 28;
+    @property({ tooltip: 'Debug: draw the launcher\'s solid circle on the floor.' })
+    showLauncherBody = false;
+
     @property({ type: CCFloat, slide: true, range: [0, 1, 0.05], tooltip: 'Loaded stone size relative to the launched stone (1 = same, <1 = a bit smaller on the launcher).' })
     loadedScaleFactor = 0.85;
     @property({ type: CCFloat, tooltip: 'Duration (s) of the scale-up "pop" when a new stone loads on the launcher (0 = instant).' })
@@ -100,6 +111,8 @@ export class StoneLauncher extends Component {
     private _pendingLoadType = -1;      // gem type to show on the loaded once it has popped out (swap)
     private _cur = new Vec2();          // current touch, UI coords
     private _preview: Graphics | null = null;
+    private _body: Node | null = null;        // the launcher's solid kinematic body in the arena (ground space)
+    private _bodyDbg: Graphics | null = null; // debug overlay for the launcher body
     private _segs: Seg[] | null = null;
     private _segsSrc: readonly Vec2[] | null = null;   // boundaryPhysics ref the cache was built from
     private _path: Vec2[] = [];
@@ -129,6 +142,10 @@ export class StoneLauncher extends Component {
         input.off(Input.EventType.MOUSE_DOWN,  this._onMouseDown,  this);
         input.off(Input.EventType.MOUSE_MOVE,  this._onMouseMove,  this);
         input.off(Input.EventType.MOUSE_UP,    this._onMouseUp,    this);
+        if (this._body?.isValid) this._body.destroy();
+        this._body = null;
+        if (this._bodyDbg?.isValid) this._bodyDbg.node.destroy();
+        this._bodyDbg = null;
     }
 
     // ── public API (called by the coordinator) ──
@@ -225,6 +242,8 @@ export class StoneLauncher extends Component {
     }
 
     update(dt: number): void {
+        this._ensureBody();            // the launcher's own solid body (stones bounce off it)
+        this._drawBodyDebug();
         this._updateLoadedPop(dt);
         this._positionLoadedStone();   // keep the resting stone glued to the launcher (survives resize)
         if (!this._aiming) return;
@@ -260,12 +279,14 @@ export class StoneLauncher extends Component {
         if (len < this.minDrag) return;
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull (visual dir)
-        const vel = this._groundDir(eff.x, eff.y).multiplyScalar(this.launchSpeed * power);
+        const dir = this._groundDir(eff.x, eff.y);     // unit ground direction
+        const spawn = this._spawnFrom(dir.x, dir.y);   // just outside the launcher body, along the shot
+        const vel = dir.multiplyScalar(this.launchSpeed * power);
         Stone.spawn({
             arena: this.arena,
             layer: this.stoneLayer,
             viewPrefab: this.runePrefab,
-            pos: this._spawnPhysics(),
+            pos: spawn,
             velocity: vel,
             radius: this.stoneRadius,
             viewScale: this.stoneViewScale,
@@ -294,7 +315,8 @@ export class StoneLauncher extends Component {
         if (len < this.minDrag) { this._path = []; return; }
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
         const d0 = this._groundDir(eff.x, eff.y);
-        this._path = this._simulate(this._spawnPhysics(), d0.multiplyScalar(this.launchSpeed * power));
+        const spawn = this._spawnFrom(d0.x, d0.y);
+        this._path = this._simulate(spawn, d0.multiplyScalar(PREVIEW_SPEED * power));
         this._drawDots(g, this._path);
     }
 
@@ -319,6 +341,65 @@ export class StoneLauncher extends Component {
     private _spawnPhysics(): Vec2 {
         const lp = this.node.position;
         return new Vec2(unprojectX(lp.x, lp.y), unprojectY(lp.y));
+    }
+
+    /** Ground spawn point for a shot in unit ground direction (dx,dy): pushed just outside the launcher
+     *  body along the shot, so the launched stone never spawns overlapping it (which Box2D would eject). */
+    private _spawnFrom(dx: number, dy: number): Vec2 {
+        const s = this._spawnPhysics();
+        const off = this.launcherRadius + this.stoneRadius + 2;
+        return new Vec2(s.x + dx * off, s.y + dy * off);
+    }
+
+    /** Lazily create the launcher's solid circular KINEMATIC body under the arena (ground space) and keep
+     *  it pinned at the launcher's ground position, so stones in play collide with / rest against it. */
+    private _ensureBody(): void {
+        const arena = this.arena;
+        if (!arena?.isValid || physicsDepth() <= 0) return;
+        const g = this._spawnPhysics();
+        if (!this._body?.isValid) {
+            const n = new Node('LauncherBody');
+            n.layer = arena.layer;
+            n.setParent(arena);
+            const rb = n.addComponent(RigidBody2D);
+            rb.type = ERigidBody2DType.Kinematic;
+            rb.gravityScale = 0;
+            rb.enabledContactListener = true;
+            const col = n.addComponent(CircleCollider2D);
+            col.radius = this.launcherRadius;
+            col.restitution = this.stoneRestitution;
+            col.friction = this.stoneFriction;
+            col.apply();
+            this._body = n;
+        }
+        const p = this._body.position;
+        if (Math.abs(p.x - g.x) > 0.5 || Math.abs(p.y - g.y) > 0.5) this._body.setPosition(g.x, g.y, 0);
+    }
+
+    /** Debug: draw the launcher's solid circle projected onto the floor (a flat ground disc). */
+    private _drawBodyDebug(): void {
+        if (!this.showLauncherBody || !this.arena?.isValid) {
+            if (this._bodyDbg?.isValid) this._bodyDbg.clear();
+            return;
+        }
+        if (!this._bodyDbg?.isValid) {
+            const n = new Node('LauncherBodyDebug');
+            n.layer = this.arena.layer;
+            n.setParent(this.arena);
+            n.setPosition(0, 0, 0);
+            this._bodyDbg = n.addComponent(Graphics);
+            this._bodyDbg.lineWidth = 3;
+            this._bodyDbg.strokeColor = new Color(120, 255, 160, 235);
+        }
+        const g = this._spawnPhysics();
+        const cx = projectX(g.x, g.y), cy = projectY(g.y);
+        const rx = this.launcherRadius * sizeXFactor(g.y), ry = rx * 0.5;   // flat ground disc (footprint)
+        const gr = this._bodyDbg;
+        gr.clear();
+        gr.ellipse(cx, cy, rx, ry);
+        gr.moveTo(cx - rx, cy); gr.lineTo(cx + rx, cy);
+        gr.moveTo(cx, cy - ry); gr.lineTo(cx, cy + ry);
+        gr.stroke();
     }
 
     /** Convert a VISUAL aim direction (eff) into the matching GROUND velocity direction, by
@@ -369,7 +450,7 @@ export class StoneLauncher extends Component {
         if (segs.length === 0) { pts.push(new Vec2(p0.x + vel0.x, p0.y + vel0.y)); return pts; }
         const restMix = Math.max(this.stoneRestitution, this.arenaBounds?.restitution ?? 0);
         const fricMix = Math.sqrt(Math.max(0, this.stoneFriction * (this.arenaBounds?.friction ?? 0)));
-        const dampFactor = 1 / (1 + this.stoneDamping * SIM_DT);
+        const dampFactor = 1 / (1 + PREVIEW_DAMPING * SIM_DT);
         let px = p0.x, py = p0.y, vx = vel0.x, vy = vel0.y, recX = px, recY = py;
         for (let step = 0; step < SIM_MAX_STEPS; step++) {
             vx *= dampFactor; vy *= dampFactor;
@@ -441,7 +522,7 @@ export class StoneLauncher extends Component {
                 while (dist < segLen) {
                     if (cum + dist >= maxLen) break;   // reached the visible-length cap (trajectoryLength)
                     const t = dist / segLen;
-                    col.a = Math.round(165 + 75 * (1 - (cum + dist) / maxLen));   // floor 165: the tail stays clearly visible
+                    col.a = Math.round(240 * (1 - (cum + dist) / maxLen));   // fade to transparent toward the end of the trajectory
                     g.fillColor = col;
                     const py = fpy + (tpy - fpy) * t;   // depth at this dot
                     const rx = dotR * sizeXFactor(py);  // shrink with depth; 0.5 = ground tilt → flat disc

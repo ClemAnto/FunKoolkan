@@ -13,10 +13,11 @@ export const VERSION = '0.1.25';
  * end/pause panel wiring) has been REMOVED — none of it is FunKoolkan gameplay. The original
  * implementation lives in the git history (pre-cleanup commit) for reference.
  *
- * Architecture going forward: keep classes SPECIALIZED, not a monolith. The arena dynamics live in
- * `ArenaManager` (poles + magnetism, soon circuit/discharge/shield); the launch in `StoneLauncher`;
- * the magnet behaviour in `Magnet`. When the FunKoolkan loop is designed (scoring/rounds/HUD for the
- * mana circuit — GDD §22, ROADMAP Fase 2-3), wire it from small dedicated managers, NOT here.
+ * Architecture going forward: keep classes SPECIALIZED, not a monolith. The launch lives in
+ * `StoneLauncher` + `ArenaManager` (launch queue); the poles in their own `Pole` component; the
+ * mana-circuit logic will get its own dedicated class. When the FunKoolkan loop is designed
+ * (scoring/rounds/HUD for the mana circuit — GDD §22, ROADMAP Fase 2-3), wire it from small
+ * dedicated managers, NOT here.
  *
  * NOTE: the scene's GameManager component still carries the old serialized @property values (prefab/
  * node refs); Cocos ignores those that no longer exist on this class — harmless. The reusable infra

@@ -10,7 +10,7 @@ export interface RuneType {
 /**
  * The 6 rune types — the single SOURCE OF TRUTH for identifying a rune/stone in gameplay.
  *
- * `id` is the gem type used throughout (Rune.setType, Magnet.gemType, the launch queue, scoring…).
+ * `id` is the gem type used throughout (Rune.setType, the launch queue, scoring…).
  * `color` is the gem's signature colour (e.g. the launch-trajectory dots read it from here). The
  * `gem_*` nodes in the Rune prefab must be authored in THIS SAME ORDER (gems[id]).
  *

@@ -1,7 +1,7 @@
 import { _decorator, Component, Node, Vec2, Vec3, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate, Graphics, Color } from 'cc';
 import { projectX, projectY, sizeXFactor, sizeYFactor } from '../config/Perspective';
 import { Rune } from './Rune';
-import { Magnet } from './Magnet';
+import { Glue } from './Glue';
 
 const { ccclass } = _decorator;
 const _v = new Vec3();
@@ -157,14 +157,11 @@ export class Stone extends Component {
         rb.linearVelocity = o.velocity;
         if (o.angularVelocity) rb.angularVelocity = o.angularVelocity;   // deg/s; decays via angularDamping
 
-        // Mana-circuit magnetism: the body becomes a same-colour attractor once it connects to a pole.
-        Magnet.attach(body, {
-            isPole: false,
-            gemType: o.gemType ?? 0,
-            radius: o.radius,
-            arena: o.arena,
-            flightDamping: o.linearDamping ?? 0.5,
-        });
+        // Sticky behaviour: a free stone that hits a matching anchor (sticky pole / glued stone) gets
+        // captured and bonded into the soft mana structure. Composable, separate from the solid body.
+        const glue = body.addComponent(Glue);
+        glue.gemType = o.gemType ?? 0;
+        glue.radius = o.radius;
 
         if (o.viewPrefab && o.layer) {
             const view = instantiate(o.viewPrefab) as unknown as Node;
