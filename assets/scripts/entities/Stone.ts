@@ -2,6 +2,7 @@ import { _decorator, Component, Node, Vec2, Vec3, RigidBody2D, ERigidBody2DType,
 import { projectX, projectY, sizeXFactor, sizeYFactor } from '../config/Perspective';
 import { Rune } from './Rune';
 import { Glue } from './Glue';
+import { Bomb } from './Bomb';
 
 const { ccclass } = _decorator;
 const _v = new Vec3();
@@ -33,6 +34,12 @@ export class Stone extends Component {
     private _dbg: Graphics | null = null;
     /** Shared debug layer (above the stone layer) so the debug renders ON TOP of the stones. */
     private static _dbgLayer: Node | null = null;
+
+    /** All live stones — for systems that need to find them (e.g. the Bomb blast). */
+    private static _all: Stone[] = [];
+    static get all(): readonly Stone[] { return Stone._all; }
+    onEnable(): void { Stone._all.push(this); }
+    onDisable(): void { const i = Stone._all.indexOf(this); if (i >= 0) Stone._all.splice(i, 1); }
 
     lateUpdate(): void {
         const view = this.viewNode, arena = this.arena;
@@ -129,6 +136,7 @@ export class Stone extends Component {
         angularDamping?: number;
         viewScale?: number;
         gemType?: number;     // gem type to show on the rune (Rune.setType)
+        isBomb?: boolean;     // MAX-charge launch → a bomb (explodes on contact) instead of a sticky rune
         name?: string;
     }): Node {
         const body = new Node(o.name ?? 'Stone');
@@ -157,11 +165,15 @@ export class Stone extends Component {
         rb.linearVelocity = o.velocity;
         if (o.angularVelocity) rb.angularVelocity = o.angularVelocity;   // deg/s; decays via angularDamping
 
-        // Sticky behaviour: a free stone that hits a matching anchor (sticky pole / glued stone) gets
-        // captured and bonded into the soft mana structure. Composable, separate from the solid body.
-        const glue = body.addComponent(Glue);
-        glue.gemType = o.gemType ?? 0;
-        glue.radius = o.radius;
+        // A MAX-charge launch is a BOMB (explodes on contact, no gluing); otherwise it is sticky: a free
+        // stone that hits a matching anchor bonds into the soft mana structure. Both composable behaviours.
+        if (o.isBomb) {
+            body.addComponent(Bomb).radius = o.radius;
+        } else {
+            const glue = body.addComponent(Glue);
+            glue.gemType = o.gemType ?? 0;
+            glue.radius = o.radius;
+        }
 
         if (o.viewPrefab && o.layer) {
             const view = instantiate(o.viewPrefab) as unknown as Node;

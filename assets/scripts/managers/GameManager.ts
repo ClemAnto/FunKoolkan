@@ -1,4 +1,5 @@
-import { _decorator, Component } from 'cc';
+import { _decorator, Component, view, ResolutionPolicy } from 'cc';
+import { StoneExplosion } from '../entities/StoneExplosion';
 
 const { ccclass } = _decorator;
 
@@ -26,6 +27,15 @@ export const VERSION = '0.1.25';
  */
 @ccclass('GameManager')
 export class GameManager extends Component {
+    onLoad(): void {
+        // The game runs in PORTRAIT (720×1280, fit-to-height). The old (removed) GameManager set this; it
+        // MUST stay or the Game scene falls back to the project default (1280×720 landscape) and the whole
+        // playfield gets letterboxed/shrunk in portrait. Same call as MainMenu/LeaderboardPanel; FitScale
+        // then fits the arena to the portrait width. (See CoordConverter — the rest of the game assumes 720×1280.)
+        view.setDesignResolutionSize(720, 1280, ResolutionPolicy.FIXED_HEIGHT);
+        view.resizeWithBrowserSize(true);
+        StoneExplosion.preload();   // load the explosion particle textures now, so the FIRST blast is textured
+    }
     start(): void {
         console.log(`[FunKoolkan] v${VERSION} — GameManager placeholder (legacy warrior engine removed).`);
     }

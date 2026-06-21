@@ -1,5 +1,7 @@
 import { _decorator, Component, Node, Vec2, RigidBody2D, CCFloat, Graphics, Color, director } from 'cc';
 import { Pole } from './Pole';
+import { Stone } from './Stone';
+import { StoneExplosion } from './StoneExplosion';
 import { projectX, projectY, sizeXFactor } from '../config/Perspective';
 
 const { ccclass, property } = _decorator;
@@ -153,7 +155,9 @@ export class Glue extends Component {
                 const g = all[i];
                 if (g._pole) continue;
                 for (let k = 0; k < g._bonds.length; k++) {
-                    const r = g._bonds[k].anchor._root;
+                    const anchor = g._bonds[k].anchor;
+                    if (!anchor.isValid) continue;   // bond to a just-destroyed stone → ignore (dropped next _updateBonds)
+                    const r = anchor._root;
                     if (!r) continue;
                     if (!g._root) { g._root = r; changed = true; }
                     else if (g._root !== r) { Glue._discharge(g._root, r); return; }
@@ -174,21 +178,44 @@ export class Glue extends Component {
             for (let j = i + 1; j < all.length; j++) {
                 const b = all[j];
                 if (b._pole || !b._root || b._root === a._root) continue;
-                if (a._gapTo(b) <= SCOSSA_GAP) { Glue._discharge(a._root, b._root); return; }
+                if (a._gapTo(b) <= SCOSSA_GAP) { Glue._discharge(a._root, b._root, a, b); return; }
             }
         }
     }
 
-    /** SCOSSA placeholder: log the event + the number of stones involved, then destroy both structures. */
-    private static _discharge(rootA: Glue, rootB: Glue): void {
-        const doomed: Glue[] = [];
-        for (let i = 0; i < Glue._all.length; i++) {
-            const g = Glue._all[i];
-            if (!g._pole && (g._root === rootA || g._root === rootB)) doomed.push(g);
+    /** SCOSSA: destroy ONLY the stones forming the CONNECTION (the path) between the two poles — not the
+     *  whole structures. BFS the bond graph (plus the optional physical-contact link) for a path rootA→rootB
+     *  and blow up the stones on it; any branches left orphaned are freed by the next _solve. */
+    private static _discharge(rootA: Glue, rootB: Glue, linkA: Glue | null = null, linkB: Glue | null = null): void {
+        const all = Glue._all;
+        const tmp: Glue[] = [];
+        const neighbours = (g: Glue): Glue[] => {
+            tmp.length = 0;
+            for (let k = 0; k < g._bonds.length; k++) { const a = g._bonds[k].anchor; if (a.isValid) tmp.push(a); }   // its anchors
+            for (let i = 0; i < all.length; i++) { const h = all[i]; for (let k = 0; k < h._bonds.length; k++) if (h._bonds[k].anchor === g) { tmp.push(h); break; } }   // its bonded children
+            if (linkA && linkB) { if (g === linkA) tmp.push(linkB); else if (g === linkB) tmp.push(linkA); }            // the physical contact bridge
+            return tmp;
+        };
+        // BFS rootA → rootB, remembering parents to rebuild the path
+        const prev = new Map<Glue, Glue | null>();
+        prev.set(rootA, null);
+        const queue: Glue[] = [rootA];
+        while (queue.length) {
+            const cur = queue.shift()!;
+            if (cur === rootB) break;
+            const ns = neighbours(cur);
+            for (let i = 0; i < ns.length; i++) { const nb = ns[i]; if (!prev.has(nb)) { prev.set(nb, cur); queue.push(nb); } }
         }
+        // keep only the STONES on the path (the poles survive)
+        const doomed: Glue[] = [];
+        if (prev.has(rootB)) for (let n: Glue | null = rootB; n; n = prev.get(n) ?? null) if (!n._pole) doomed.push(n);
         const pa = rootA.node?.name ?? '?', pb = rootB.node?.name ?? '?';
-        console.log(`[Glue] SCOSSA! poles '${pa}' <-> '${pb}' connected — ${doomed.length} stones involved → discharge`);
-        for (let i = 0; i < doomed.length; i++) if (doomed[i].node?.isValid) doomed[i].node.destroy();
+        console.log(`[Glue] SCOSSA! '${pa}' <-> '${pb}' — ${doomed.length} connecting stones destroyed`);
+        for (let i = 0; i < doomed.length; i++) {
+            const g = doomed[i], view = g.getComponent(Stone)?.viewNode;
+            if (view?.isValid) StoneExplosion.play(view.parent, view.worldPosition, view.worldScale);
+            if (g.node?.isValid) g.node.destroy();
+        }
     }
 
     /** Come fully unstuck: drop all bonds, go free, restore the free-flight drag. */

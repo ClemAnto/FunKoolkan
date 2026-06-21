@@ -8,6 +8,7 @@ import { projectX, projectY, sizeXFactor, sizeYFactor, unprojectX, unprojectY, p
 const { ccclass, property } = _decorator;
 
 const MAX_AIM_ANGLE = 67.5 * Math.PI / 180;   // aim cone from straight-up (±75% toward horizontal)
+const GROUND_TILT = 0.5;   // perspective Y-foreshorten: a ground circle reads as a flat ellipse, ry = rx·this (see Perspective)
 const SIM_DT = 1 / 60;
 const SIM_MAX_STEPS = 6000;
 const SIM_MIN_SPEED = 0.5;   // simulate further into the slow tail → longer, more visible trajectory
@@ -19,6 +20,11 @@ const SIM_RECORD_DIST = 18;
 // wall bounce, so the guide stays an honest direction predictor; only its length is pinned here.
 const PREVIEW_SPEED = 200;     // reference full-power launch speed for the guide
 const PREVIEW_DAMPING = 0.5;   // reference stone damping for the guide
+const BOMB_PULSE_AMP = 0.15;   // loaded stone scale oscillation (±) while charged to a bomb
+const BOMB_PULSE_FREQ = 12;    // bomb pulse speed (rad/s)
+const BOMB_TINT = new Color(255, 70, 70, 255);   // red tint on the loaded stone while charged to a bomb
+const ARC_MAXDRAG = new Color(255, 210, 70, 230);   // debug arc: full-power drag distance (amber)
+const ARC_BOMB = new Color(255, 80, 80, 230);       // debug arc: bomb-arming drag distance (red)
 const _tmp = new Vec3();
 
 interface Seg { ax: number; ay: number; bx: number; by: number; nx: number; ny: number; }
@@ -58,6 +64,8 @@ export class StoneLauncher extends Component {
     runePrefab: Prefab | null = null;
     @property({ type: Node, tooltip: 'Rotating arm (StoneLauncherArm). Optional.' })
     launcherNode: Node | null = null;
+    @property({ type: Node, tooltip: 'Authored bomb icon shown above the loaded stone while charged to a BOMB (kept inactive otherwise). Optional.' })
+    bombIndicator: Node | null = null;
     @property({ type: ArenaBounds, tooltip: 'Arena boundary — wall segments + material for the bounce trajectory.' })
     arenaBounds: ArenaBounds | null = null;
 
@@ -71,6 +79,8 @@ export class StoneLauncher extends Component {
     minDrag = 24;
     @property({ type: CCFloat, tooltip: 'Aim distance (arena-local px) that reaches full power.' })
     maxDrag = 300;
+    @property({ type: CCFloat, slide: true, range: [1, 2, 0.05], tooltip: 'BOMB overcharge: pull PAST full power by this × maxDrag to launch a bomb (1 = right at full power, 1.3 = 30% extra pull). Power itself stays capped at full.' })
+    bombDragFactor = 1.3;
     @property({ type: CCFloat, slide: true, range: [0, 1, 0.05], tooltip: 'How much the bow arm follows the aim (1 = full, 0.5 = half).' })
     bowFollowFactor = 0.5;
     @property({ type: CCFloat, tooltip: 'Visible trajectory length in SCREEN px (0 = the whole simulated path, until the stone stops).' })
@@ -102,6 +112,8 @@ export class StoneLauncher extends Component {
     onAimPress: ((uiX: number, uiY: number) => boolean) | null = null;   // press → return true if consumed (e.g. swap on NEXT)
 
     private _aiming = false;
+    private _bombCharged = false;       // aiming AND pulled into the bomb-overcharge zone
+    private _wasBombCharged = false;    // previous bomb-charge state, to apply the cue (indicator + red tint) on transitions
     private _loadedType = 0;            // gem type resting on the launcher (fires on the next release)
     private _loadedRune: Rune | null = null;   // the stone resting on the launcher (about to fire)
     private _loadAnimT = 1;             // 0..1 progress within the current loaded phase
@@ -113,16 +125,21 @@ export class StoneLauncher extends Component {
     private _preview: Graphics | null = null;
     private _body: Node | null = null;        // the launcher's solid kinematic body in the arena (ground space)
     private _bodyDbg: Graphics | null = null; // debug overlay for the launcher body
+    private _dragArc: Graphics | null = null; // debug overlay: the max-drag (full-power) pull-distance arc
+    private _bombArc: Graphics | null = null; // debug overlay: the bomb-arming pull-distance arc
     private _segs: Seg[] | null = null;
     private _segsSrc: readonly Vec2[] | null = null;   // boundaryPhysics ref the cache was built from
     private _path: Vec2[] = [];
     private _trajPhase = 0;
+    private _pulseT = 0;                // time accumulator for the bomb-charge pulse on the loaded stone
     private _dotColor = new Color(120, 220, 255, 200);   // reused in _drawDots (no per-frame alloc)
 
     /** True while the loaded stone's pop is running (the coordinator gates a swap on it). */
     get isLoadAnimating(): boolean { return this._loadPhase !== 0; }
     /** Gem type currently loaded (what fires next). */
     get loadedType(): number { return this._loadedType; }
+    /** True while aiming pulled into the bomb-overcharge zone — for the (future) charge cue. */
+    get isBombCharged(): boolean { return this._bombCharged; }
 
     onEnable(): void {
         Stone.debugDraw = this.debugStones;
@@ -146,6 +163,10 @@ export class StoneLauncher extends Component {
         this._body = null;
         if (this._bodyDbg?.isValid) this._bodyDbg.node.destroy();
         this._bodyDbg = null;
+        if (this._dragArc?.isValid) this._dragArc.node.destroy();
+        this._dragArc = null;
+        if (this._bombArc?.isValid) this._bombArc.node.destroy();
+        this._bombArc = null;
     }
 
     // ── public API (called by the coordinator) ──
@@ -200,8 +221,9 @@ export class StoneLauncher extends Component {
         const gy = unprojectY(lp.y);              // launcher depth in ground space
         const base = this.stoneViewScale * this.loadedScaleFactor;   // a bit smaller than the launched stone
         const pop = this._loadMult();   // baked here: the per-frame setScale would override a tween
+        const pulse = this._bombCharged ? 1 + BOMB_PULSE_AMP * Math.sin(this._pulseT * BOMB_PULSE_FREQ) : 1;   // explosive throb
         r.node.setPosition(lp.x, lp.y, 0);
-        r.node.setScale(base * sizeXFactor(gy) * pop, base * sizeYFactor(gy) * pop, 1);
+        r.node.setScale(base * sizeXFactor(gy) * pop * pulse, base * sizeYFactor(gy) * pop * pulse, 1);
     }
 
     /** Loaded scale multiplier for the current phase: 1 settled, linear 1→0 pop-out, eased 0→1 pop-in. */
@@ -244,6 +266,13 @@ export class StoneLauncher extends Component {
     update(dt: number): void {
         this._ensureBody();            // the launcher's own solid body (stones bounce off it)
         this._drawBodyDebug();
+        this._drawDragArcs();          // debug: the max-drag + bomb-arming pull-distance arcs (under showLauncherBody)
+        this._pulseT += dt;
+        if (this._bombCharged !== this._wasBombCharged) {   // entered/left the bomb-charge zone → update the cue
+            this._wasBombCharged = this._bombCharged;
+            if (this.bombIndicator?.isValid) this.bombIndicator.active = this._bombCharged;
+            this._loadedRune?.setTint(this._bombCharged ? BOMB_TINT : Color.WHITE);   // red while armed, clear otherwise
+        }
         this._updateLoadedPop(dt);
         this._positionLoadedStone();   // keep the resting stone glued to the launcher (survives resize)
         if (!this._aiming) return;
@@ -270,14 +299,15 @@ export class StoneLauncher extends Component {
 
     private _release(x: number, y: number): void {
         if (!this._aiming) return;
-        this._aiming = false; this._path = [];
+        this._aiming = false; this._bombCharged = false; this._path = [];
         this._clearPreview();
         if (this.launcherNode) this.launcherNode.angle = 0;
         if (!this.arena) return;
         const pull = this._pull(x, y);
-        const len = Math.hypot(pull.x, pull.y);
+        const len = this._dragLen(pull);
         if (len < this.minDrag) return;
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
+        const isBomb = len >= this.maxDrag * this.bombDragFactor;   // pulled PAST full power into the overcharge zone → bomb
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull (visual dir)
         const dir = this._groundDir(eff.x, eff.y);     // unit ground direction
         const spawn = this._spawnFrom(dir.x, dir.y);   // just outside the launcher body, along the shot
@@ -294,25 +324,27 @@ export class StoneLauncher extends Component {
             friction: this.stoneFriction,
             linearDamping: this.stoneDamping,
             gemType: this._loadedType,
-            name: 'LaunchedStone',
+            isBomb,
+            name: isBomb ? 'BombStone' : 'LaunchedStone',
         });
         // The coordinator advances the queue and calls armReload()/next.reload() (collapses the loaded now).
         this.onLaunch?.(this._loadedType);
     }
 
-    private _abort(): void { this._aiming = false; this._path = []; this._clearPreview(); if (this.launcherNode) this.launcherNode.angle = 0; }
+    private _abort(): void { this._aiming = false; this._bombCharged = false; this._path = []; this._clearPreview(); if (this.launcherNode) this.launcherNode.angle = 0; }
 
     /** Recompute aim + trajectory from the CURRENT touch, relative to the launcher. */
     private _resim(): void {
         if (!this._aiming) return;
         const pull = this._pull(this._cur.x, this._cur.y);
-        const len = Math.hypot(pull.x, pull.y);
+        const len = this._dragLen(pull);
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull
         if (this.launcherNode) this.launcherNode.angle = -Math.atan2(eff.x, eff.y) * 180 / Math.PI * this.bowFollowFactor;
         const g = this._ensurePreview();
         if (!g) { return; }
         g.clear();
-        if (len < this.minDrag) { this._path = []; return; }
+        if (len < this.minDrag) { this._path = []; this._bombCharged = false; return; }
+        this._bombCharged = len >= this.maxDrag * this.bombDragFactor;   // in the bomb-overcharge zone (for the future cue)
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
         const d0 = this._groundDir(eff.x, eff.y);
         const spawn = this._spawnFrom(d0.x, d0.y);
@@ -326,6 +358,51 @@ export class StoneLauncher extends Component {
         g.clear();
         if (this._path.length >= 2) this._drawDots(g, this._path);
     }
+
+    /** Debug: two arcs around the launcher, spanning the ±aim cone (you pull downward) — the MAX-DRAG arc
+     *  (amber, where launch power saturates) and the BOMB-ARMING arc just past it (red, maxDrag × bombDragFactor).
+     *  Each on its OWN always-on Graphics (arena-local pull space) so they never fight the aim-preview dots. */
+    private _drawDragArcs(): void {
+        if (!this.showLauncherBody || !this.arena?.isValid) {
+            if (this._dragArc?.isValid) this._dragArc.clear();
+            if (this._bombArc?.isValid) this._bombArc.clear();
+            return;
+        }
+        this._dragArc = this._drawArc(this._dragArc, 'MaxDragDebug', this.maxDrag, ARC_MAXDRAG);
+        this._bombArc = this._drawArc(this._bombArc, 'BombLimitDebug', this.maxDrag * this.bombDragFactor, ARC_BOMB);
+    }
+
+    /** (Re)draw one aim-cone arc of the given radius/colour on its own child Graphics; creates it on first use.
+     *  Drawn as a FLAT ellipse (ry = rx·GROUND_TILT, sampled) so it lies on the foreshortened ground like the
+     *  launcher — and so it coincides with the bomb/power threshold, which uses the same squashed metric (_dragLen). */
+    private _drawArc(g: Graphics | null, name: string, radius: number, color: Color): Graphics {
+        if (!g?.isValid) {
+            const n = new Node(name);
+            n.layer = this.arena!.layer;
+            n.setParent(this.arena!);
+            n.setPosition(0, 0, 0);
+            g = n.addComponent(Graphics);
+            g.lineWidth = 3;
+        }
+        const lp = this.node.position;
+        const rx = radius, ry = radius * GROUND_TILT;
+        const a0 = -Math.PI / 2 - MAX_AIM_ANGLE, a1 = -Math.PI / 2 + MAX_AIM_ANGLE;
+        const STEPS = 36;
+        g.clear();
+        g.strokeColor = color;
+        for (let i = 0; i <= STEPS; i++) {
+            const a = a0 + (a1 - a0) * (i / STEPS);
+            const x = lp.x + rx * Math.cos(a), y = lp.y + ry * Math.sin(a);
+            if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+        }
+        g.stroke();
+        return g;
+    }
+
+    /** Pull magnitude in the squashed-ground metric. The ground is Y-foreshortened on screen (a launcher
+     *  circle reads as a flat ellipse, ry = rx·GROUND_TILT), so a vertical drag covers less screen distance
+     *  per unit of ground pull — un-squash Y (÷GROUND_TILT) so power/threshold match the flat drag arcs. */
+    private _dragLen(pull: Vec2): number { return Math.hypot(pull.x, pull.y / GROUND_TILT); }
 
     /** Vector from the launcher to the touch, in arena-local (visual) space. */
     private _pull(uiX: number, uiY: number): Vec2 {
@@ -393,7 +470,7 @@ export class StoneLauncher extends Component {
         }
         const g = this._spawnPhysics();
         const cx = projectX(g.x, g.y), cy = projectY(g.y);
-        const rx = this.launcherRadius * sizeXFactor(g.y), ry = rx * 0.5;   // flat ground disc (footprint)
+        const rx = this.launcherRadius * sizeXFactor(g.y), ry = rx * GROUND_TILT;   // flat ground disc (footprint)
         const gr = this._bodyDbg;
         gr.clear();
         gr.ellipse(cx, cy, rx, ry);
@@ -526,7 +603,7 @@ export class StoneLauncher extends Component {
                     g.fillColor = col;
                     const py = fpy + (tpy - fpy) * t;   // depth at this dot
                     const rx = dotR * sizeXFactor(py);  // shrink with depth; 0.5 = ground tilt → flat disc
-                    g.ellipse(fvx + ux * dist, fvy + uy * dist, rx, rx * 0.5);
+                    g.ellipse(fvx + ux * dist, fvy + uy * dist, rx, rx * GROUND_TILT);
                     g.fill();
                     dist += step;
                 }

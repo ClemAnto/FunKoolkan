@@ -1,4 +1,4 @@
-import { _decorator, Component, Node } from 'cc';
+import { _decorator, Component, Node, Sprite, Color } from 'cc';
 
 const { ccclass, property } = _decorator;
 
@@ -25,5 +25,12 @@ export class Rune extends Component {
         for (let i = 0; i < this.gems.length; i++) {
             if (this.gems[i]) this.gems[i].active = (i === t);
         }
+    }
+
+    /** Tint the whole rune (every sprite in the subtree — a runtime colour, like opacity) — e.g. red while a
+     *  shot is charged to a bomb; pass white to clear. */
+    setTint(color: Color): void {
+        const sprites = this.getComponentsInChildren(Sprite);
+        for (let i = 0; i < sprites.length; i++) sprites[i].color = color;
     }
 }
