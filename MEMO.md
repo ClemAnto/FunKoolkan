@@ -79,6 +79,24 @@ Costante **`RUNES`** = unica fonte di verità: 6 tipologie `{id, name, color}` (
 ### GameManager
 **SVUOTATO a placeholder**: motore FunWarriors (merge/powerup/punteggio/round/resize/leaderboard, ~3650 righe) rimosso, resta solo `export const VERSION` (originale nel git history). L'infra riusabile (VFXManager/Settings/pannelli/leaderboard/Portal) è **mantenuta** (serve al gameplay FunKoolkan futuro). File warrior-only (Warrior, SpawnManager, i 4 powerup-effect+sparkle, DebugPanel, OnboardingHints-merge) ora **orfani**: codice morto, non rompono la build, da valutare separatamente (NON cancellare gli effetti riutilizzabili).
 
+### Curling — aree HOUSE/TEE + input launcher + EditMode (2026-06-22)  *(NUOVO CORE — vedi pivot in CLAUDE.md/GDD)*
+
+**`House.ts`** (sul nodo Arena). Le zone HOUSE/TEE **NON** sono cerchi in ground space (lo erano in v1 e attivavano stone fuori area **in verticale**): sono l'**ellisse dello sprite a schermo**.
+- Centro: `node.worldPosition` → arena-local via `invert(arena.worldMatrix)` (è già la posizione visiva).
+- Semiassi: `contentSize.{w,h}/2 × (node.worldScale / arena.worldScale)`, su X **e** Y (arena-local). **NON** usare `ry=rx*0.5`: deve seguire l'altezza vera dello sprite.
+- Detection: proietta la stone (`projectX/Y(body.pos)`) e testa l'ellisse **gonfiata** dei raggi on-screen (`srx=radius·sizeXFactor`, `sry=radius·sizeYFactor`).
+- **Niente collider Box2D** (rilevamento geometrico puro: detection + debug-draw). Un collider Box2D vivrebbe in ground space piatto e nel physics-debug apparirebbe sfasato rispetto all'arte (modello B) → fuorviante e inutile.
+- Getter `houseArea`/`teeArea` = `{x,y,rx,ry}` a schermo, pronti per lo scoring.
+- ⚠️ **GOTCHA**: de-squashare la **larghezza** per ricavare un raggio di cerchio in ground space dà un cerchio enorme in **profondità** che, proiettato, sborda verticalmente oltre l'arte. → lavorare in spazio **proiettato/visivo** (ellisse = sprite).
+
+**`StoneLauncher` — input lancio (2026-06-22)**:
+- Lancio **solo** se il **primo tocco** è sulla hit-box: `this.node.getComponent(UITransform).getBoundingBoxToWorld().contains(uiPoint)` (idiom = `NextPreview.containsUIPoint`; UI-world == `getUILocation`). Hit-box = `UITransform` del nodo StoneLauncher (100×100, scala Y 0.5). Allargabile in editor.
+- **Click non lancia mai** (tap < `minDrag`). **Posa invalida** = `pull.y>0` (puntatore **sopra** il launcher) o `len<minDrag` → niente tiro/traiettoria (slingshot tira verso il basso/lati).
+- **Transizione morbida** invalido↔valido: `launcherNode.angle` e `_trajAlpha` inseguono `_armTarget`/`_trajTargetAlpha` in `update()` con `AIM_EASE=16` (per-sec). Disegno traiettoria centralizzato in `update()/_redraw()` (`_resim` setta solo i target + ricalcola path se valido). Effetto: il braccio ha un filo di lag anche in mira normale (alzare `AIM_EASE` per più reattività).
+- `setSuspended(v)`: launcher inerte + `_abort()`; usato da EditMode SOLO durante il drag.
+
+**`EditMode.ts`** (sul nodo GameManager): tool dev per **trascinare le stone in arena**. `toggle()` si **auto-aggancia** a `editButton.on(Button.EventType.CLICK)` (niente ClickEvent manuale). Drag = stone più vicina in ground space (`Stone.all`, dist ≤ `radius+8`) → corpo **Kinematic** → `setPosition` al dito → **Dynamic** + vel 0 al rilascio. Stato attivo = **tinta dello Sprite** del bottone (Button transition SCALE non tocca il colore). Il launcher resta attivo in EDIT (sospeso solo durante il drag). Wiring: `launcher`, `editButton`(=nodo "DebugButton" label EDIT), `arena`(opz, fallback `launcher.arena`).
+
 ---
 
 

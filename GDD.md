@@ -2,6 +2,8 @@
 
 > Documento di game design. Versione 0.3 (tema cambiato in **Rapa Nui / Isola di Pasqua** il 2026-06-19). Sostituisce il design maya. Il **merge è eliminato**, la meccanica core è il **circuito di mana**. Le sezioni **(ereditato)** descrivono infrastruttura riusata da FunWarriors; quelle **TBD** sono da definire in prototipo/playtest.
 >
+> ⚠️ **PIVOT 2026-06-22 — il core in prototipo è ora il CURLING (non più il circuito di mana).** Costruire strutture per unire i due poli non divertiva → il **circuito di mana** descritto qui sotto (catena Alba↔Tramonto + scarica) è **parcheggiato come bonus futuro**. **Nuovo core**: al centro dell'arena un'area **HOUSE** con un **TEE** al centro; quando una stone si **ferma sul TEE**, tutte le stone **dello stesso colore** dentro/che toccano l'**HOUSE** si trasformano in **proiettili di energia** verso **Koolkan** (la stone sul TEE è l'ultimo proiettile; le altre di colore diverso restano). Boss Koolkan a scudo, idolo Make-make/bombe, moai-spawner, overflow=game over, reskin Rapa Nui **restano validi**: cambia solo *come si carica il colpo* (curling invece di circuito topologico). Dettaglio curling da formalizzare in v0.4.
+>
 > **Nome**: il gioco resta **FunKoolkan**; **Koolkan** è il nome del **boss** (moai colossale corrotto) — il nome coniato è invisibile come etimologia maya al giocatore e funziona da brand distintivo (decisione 2026-06-19).
 
 ## 1. Concept in una frase

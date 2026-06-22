@@ -22,10 +22,12 @@ const PREVIEW_SPEED = 200;     // reference full-power launch speed for the guid
 const PREVIEW_DAMPING = 0.5;   // reference stone damping for the guide
 const BOMB_PULSE_AMP = 0.15;   // loaded stone scale oscillation (±) while charged to a bomb
 const BOMB_PULSE_FREQ = 12;    // bomb pulse speed (rad/s)
+const AIM_EASE = 16;           // per-second ease rate for the bow arm + trajectory toward their targets (smooth both ways: invalid↔valid)
 const BOMB_TINT = new Color(255, 70, 70, 255);   // red tint on the loaded stone while charged to a bomb
 const ARC_MAXDRAG = new Color(255, 210, 70, 230);   // debug arc: full-power drag distance (amber)
 const ARC_BOMB = new Color(255, 80, 80, 230);       // debug arc: bomb-arming drag distance (red)
 const _tmp = new Vec3();
+const _hitPt = new Vec2();   // reused for the launcher hit-test (no per-touch alloc)
 
 interface Seg { ax: number; ay: number; bx: number; by: number; nx: number; ny: number; }
 
@@ -112,6 +114,7 @@ export class StoneLauncher extends Component {
     onAimPress: ((uiX: number, uiY: number) => boolean) | null = null;   // press → return true if consumed (e.g. swap on NEXT)
 
     private _aiming = false;
+    private _suspended = false;         // true while another mode (e.g. EDIT) owns the input → launcher inert
     private _bombCharged = false;       // aiming AND pulled into the bomb-overcharge zone
     private _wasBombCharged = false;    // previous bomb-charge state, to apply the cue (indicator + red tint) on transitions
     private _loadedType = 0;            // gem type resting on the launcher (fires on the next release)
@@ -131,6 +134,9 @@ export class StoneLauncher extends Component {
     private _segsSrc: readonly Vec2[] | null = null;   // boundaryPhysics ref the cache was built from
     private _path: Vec2[] = [];
     private _trajPhase = 0;
+    private _armTarget = 0;             // desired bow-arm angle; update() eases launcherNode.angle toward it
+    private _trajAlpha = 1;             // current global multiplier on the trajectory dot alpha (eased)
+    private _trajTargetAlpha = 1;       // its target (1 = valid pose, 0 = invalid) → smooth fade in/out
     private _pulseT = 0;                // time accumulator for the bomb-charge pulse on the loaded stone
     private _dotColor = new Color(120, 220, 255, 200);   // reused in _drawDots (no per-frame alloc)
 
@@ -140,6 +146,11 @@ export class StoneLauncher extends Component {
     get loadedType(): number { return this._loadedType; }
     /** True while aiming pulled into the bomb-overcharge zone — for the (future) charge cue. */
     get isBombCharged(): boolean { return this._bombCharged; }
+
+    /** Suspend the launcher (e.g. while EDIT mode drags stones in the arena): it ignores all input
+     *  and aborts any aim in progress until resumed. */
+    setSuspended(v: boolean): void { this._suspended = v; if (v) this._abort(); }
+    get suspended(): boolean { return this._suspended; }
 
     onEnable(): void {
         Stone.debugDraw = this.debugStones;
@@ -277,6 +288,9 @@ export class StoneLauncher extends Component {
         this._positionLoadedStone();   // keep the resting stone glued to the launcher (survives resize)
         if (!this._aiming) return;
         this._trajPhase = (this._trajPhase + 160 * dt) % 30;
+        const k = Math.min(1, dt * AIM_EASE);   // ease the arm + trajectory toward their targets (both ways: invalid↔valid)
+        if (this.launcherNode) this.launcherNode.angle += (this._armTarget - this.launcherNode.angle) * k;
+        this._trajAlpha += (this._trajTargetAlpha - this._trajAlpha) * k;
         this._redraw();
     }
 
@@ -291,8 +305,20 @@ export class StoneLauncher extends Component {
     private _onMouseUp(e: EventMouse):    void { const p = e.getUILocation(); this._release(p.x, p.y); }
 
     private _beginAim(x: number, y: number): void {
-        if (this.onAimPress?.(x, y)) return;   // consumed by the coordinator (e.g. tap on NEXT → swap)
-        this._aiming = true; this._cur.set(x, y); this._resim();
+        if (this._suspended) return;             // another mode (e.g. EDIT) owns the input → launcher inert
+        if (this.onAimPress?.(x, y)) return;     // consumed by the coordinator (e.g. tap on NEXT → swap)
+        if (!this._hitLauncher(x, y)) return;    // arm ONLY when the FIRST touch is ON the launcher (a tap/drag starting elsewhere is ignored; a pure click never reaches minDrag → never fires)
+        this._aiming = true; this._cur.set(x, y);
+        this._path = []; this._trajAlpha = 0;    // fresh aim: starts as an invalid (zero-drag) pose, eases in as you pull
+        this._resim();
+    }
+
+    /** True if a UI point lands on the launcher's hit box (its UITransform). The launcher arms only
+     *  when the first touch is on it — mirrors NextPreview.containsUIPoint (UI-world AABB test). */
+    private _hitLauncher(uiX: number, uiY: number): boolean {
+        const ut = this.node.getComponent(UITransform);
+        if (!ut) return true;   // no hit box authored → don't gate
+        return ut.getBoundingBoxToWorld().contains(_hitPt.set(uiX, uiY));
     }
 
     private _updateAim(x: number, y: number): void { if (!this._aiming) return; this._cur.set(x, y); this._resim(); }
@@ -305,7 +331,7 @@ export class StoneLauncher extends Component {
         if (!this.arena) return;
         const pull = this._pull(x, y);
         const len = this._dragLen(pull);
-        if (len < this.minDrag) return;
+        if (len < this.minDrag || pull.y > 0) return;   // too short, or pulled ABOVE the launcher → invalid, no launch
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
         const isBomb = len >= this.maxDrag * this.bombDragFactor;   // pulled PAST full power into the overcharge zone → bomb
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull (visual dir)
@@ -338,25 +364,28 @@ export class StoneLauncher extends Component {
         if (!this._aiming) return;
         const pull = this._pull(this._cur.x, this._cur.y);
         const len = this._dragLen(pull);
+        if (len < this.minDrag || pull.y > 0) {   // invalid pose (too short, or above the launcher): keep the last path,
+            this._armTarget = 0;                   // update() eases the arm to neutral and fades the dots out
+            this._trajTargetAlpha = 0;
+            this._bombCharged = false;
+            return;
+        }
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull
-        if (this.launcherNode) this.launcherNode.angle = -Math.atan2(eff.x, eff.y) * 180 / Math.PI * this.bowFollowFactor;
-        const g = this._ensurePreview();
-        if (!g) { return; }
-        g.clear();
-        if (len < this.minDrag) { this._path = []; this._bombCharged = false; return; }
+        this._armTarget = -Math.atan2(eff.x, eff.y) * 180 / Math.PI * this.bowFollowFactor;
+        this._trajTargetAlpha = 1;                    // valid → update() eases arm + dots back in (symmetric transition)
         this._bombCharged = len >= this.maxDrag * this.bombDragFactor;   // in the bomb-overcharge zone (for the future cue)
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
         const d0 = this._groundDir(eff.x, eff.y);
         const spawn = this._spawnFrom(d0.x, d0.y);
         this._path = this._simulate(spawn, d0.multiplyScalar(PREVIEW_SPEED * power));
-        this._drawDots(g, this._path);
+        // dots are drawn by update()/_redraw() so the marching animation + ease stay centralised
     }
 
     private _redraw(): void {
         const g = this._ensurePreview();
         if (!g) return;
         g.clear();
-        if (this._path.length >= 2) this._drawDots(g, this._path);
+        if (this._path.length >= 2 && this._trajAlpha > 0.01) this._drawDots(g, this._path);
     }
 
     /** Debug: two arcs around the launcher, spanning the ±aim cone (you pull downward) — the MAX-DRAG arc
@@ -599,7 +628,7 @@ export class StoneLauncher extends Component {
                 while (dist < segLen) {
                     if (cum + dist >= maxLen) break;   // reached the visible-length cap (trajectoryLength)
                     const t = dist / segLen;
-                    col.a = Math.round(240 * (1 - (cum + dist) / maxLen));   // fade to transparent toward the end of the trajectory
+                    col.a = Math.round(240 * (1 - (cum + dist) / maxLen) * this._trajAlpha);   // length fade × global fade (eased in/out on invalid↔valid)
                     g.fillColor = col;
                     const py = fpy + (tpy - fpy) * t;   // depth at this dot
                     const rx = dotR * sizeXFactor(py);  // shrink with depth; 0.5 = ground tilt → flat disc

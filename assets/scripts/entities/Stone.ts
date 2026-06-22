@@ -28,6 +28,8 @@ export class Stone extends Component {
     rotationNode: Node | null = null;
     /** Physics collider radius (ground px) — used by the debug draw. */
     radius = 0;
+    /** Debug: set by House when this stone overlaps the HOUSE zone → its debug outline thickens. */
+    debugInHouse = false;
 
     /** Debug overlay toggle (set by StoneLauncher.debugStones): a flat ellipse + rotation radius per stone. */
     static debugDraw = false;
@@ -104,6 +106,7 @@ export class Stone extends Component {
         const rx = r * sizeXFactor(p.y), ry = rx * 0.5;   // 0.5 = ground tilt → flat disc on the floor
         const th = this._zAngleDeg() * Math.PI / 180;     // full ±180 (node.angle would fold to ±90 → fake wobble)
         g.clear();
+        g.lineWidth = this.debugInHouse ? 7 : 3;           // thicker while touching the HOUSE
         g.ellipse(cx, cy, rx, ry);
         g.moveTo(cx, cy);
         g.lineTo(cx - rx * Math.sin(th), cy + ry * Math.cos(th));   // radius on the flat ellipse → rotation

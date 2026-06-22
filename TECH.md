@@ -4,6 +4,27 @@
 
 ---
 
+## Curling (HOUSE/TEE) — zone geometriche in spazio PROIETTATO, non Box2D (FunKoolkan, 2026-06-22)
+
+Nuovo core (vedi pivot in CLAUDE.md/GDD). Le zone HOUSE/TEE sono **geometriche in spazio visivo (arena-local proiettato)**, NON collider Box2D.
+- **Perché non Box2D**: la fisica è in ground space piatto (modello B), il render è proiettato. Un collider Box2D vivrebbe nel piatto e nel physics-debug apparirebbe sfasato rispetto all'arte. Inoltre il rilevamento curling non ha bisogno di contatti: basta un test geometrico. → `House.ts` calcola l'**ellisse dello sprite a schermo** (centro + semiassi da `UITransform`×scala) e testa la **posizione proiettata** delle stone. Stesso test servirà allo scoring.
+- **Perché ellisse visiva e non cerchio in ground space**: de-squashare la larghezza in un raggio ground produce un cerchio che, riproiettato, sborda verticalmente oltre l'arte (la proiezione Y è non-lineare). Lavorare in spazio proiettato = la zona combacia 1:1 col disegno.
+- `Glue`/`Pole` (ex circuito di mana) **restano in repo** parcheggiati come bonus futuro; non sono cancellati né usati dal curling.
+
+## EditMode — tool drag-stone che si auto-aggancia al Button (FunKoolkan, 2026-06-22)
+
+Componente dev separato per riposizionare le stone. Decisioni:
+- **Si aggancia da solo** all'evento `Button.EventType.CLICK` del nodo `editButton` (in `onEnable`), invece di richiedere un ClickEvent serializzato in editor: rende il wiring a prova di dimenticanza (basta assegnare il nodo). `toggle()` resta pubblico.
+- **Coordinamento col launcher per stato condiviso, non per ordine di input**: entrambi ascoltano l'input globale; il launcher si auto-sopprime via `setSuspended()` chiamato da EditMode **solo durante il drag** di una stone (così il lancio resta possibile in EDIT e non c'è doppio innesco anche se una stone è sopra la hit-box del launcher). Vedi anche §"Launcher input gate".
+- Drag: stone più vicina (`Stone.all`, ground space) → corpo **Kinematic** mentre segue il dito (la fisica non reagisce) → **Dynamic** a vel 0 al rilascio.
+- Stato attivo mostrato **tintando lo Sprite** del bottone: lecito perché il `Button` usa transition **SCALE** (non tocca il colore). Cambio di proprietà su istanza in scena, coerente con la regola "niente disegno da codice".
+
+## Launcher input gate — primo tocco sul launcher + posa valida (FunKoolkan, 2026-06-22)
+
+`StoneLauncher` arma la mira **solo** se il primo tocco cade sulla hit-box del launcher (`UITransform.getBoundingBoxToWorld().contains`, idiom di `NextPreview`). Un click non lancia mai (tap < `minDrag`). Posa **invalida** se il puntatore va sopra il launcher (`pull.y>0`). Transizione braccio+traiettoria gestita per **target inseguiti in `update()`** (`AIM_EASE`) → smooth simmetrico invalido↔valido; il disegno è centralizzato lì, `_resim` setta solo i target.
+
+---
+
 ## Portal SDK (Poki / CrazyGames) — adapter spegnibile (2026-06-10, CrazyGames 2026-06-15)
 
 **Decisione**: stessa stratificazione del leaderboard — `services/PortalSdk.ts` (interfaccia no-throw), `NullPortal` (standalone), `PokiPortal` (SDK v2), `CrazyGamesPortal` (SDK v3), tutti caricati lazy dal CDN a runtime (mai in `index.html`); `PortalProvider.get()` singleton (switch a 3 vie) su flag `PORTAL` in `config/PortalConfig.ts` (`'none' | 'poki' | 'crazygames'`, **default `'none'`** → la build GitHub Pages non cambia di un byte).

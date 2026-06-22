@@ -3,6 +3,8 @@
 > Piano di sviluppo per fasi (Cocos Creator 3.8.8, TypeScript). Stima realistica part-time (~10-15h/sett).
 > **Riscritta da zero il 2026-06-21** per il design rifondato (GDD v0.3: tema Rapa Nui/moai, core = **circuito di mana**, boss **Koolkan** a scudo, **niente merge**).
 > La vecchia roadmap FunWarriors (gameplay merge-based) è stata sostituita: la sua storia dettagliata resta nel git history del progetto FunWarriors e nei commit pre-fork.
+>
+> ⚠️ **PIVOT 2026-06-22**: il core attivo NON è più il *circuito di mana* (Fase 2 qui sotto) ma il **CURLING** — area **HOUSE** + **TEE** → quando una stone si ferma sul TEE, le stone **stesso colore** che toccano l'HOUSE diventano **proiettili** contro Koolkan. La Fase 2 "circuito di mana" (glue/poli) è **parcheggiata come bonus futuro**. Stato curling: rilevazione aree HOUSE/TEE fatta (greybox `House.ts`, da wirare), **scoring da fare**. Boss/bombe/spawner/round/overflow (Fasi 3+) restano validi. Dettagli in CLAUDE.md §Stato attuale (sessione 2026-06-22) + GDD.md banner.
 
 ## Stack tecnologico
 
