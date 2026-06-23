@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FunKoolkan — Scarica di Mana (VFX brief)</title>
+<style>
+  :root {
+    --ground:    #0D141F;   /* deep blue-grey — il fondo del gioco */
+    --surface:   #141E2D;
+    --surface-2: #1B2839;
+    --border:    #25364B;
+    --text:      #D5E0EE;
+    --muted:     #7E90A8;
+    --accent:    #3FE3FF;   /* ciano elettrico — l'arco di mana */
+    --core:      #EAF8FF;   /* bianco incandescente */
+    --deep:      #1E6BFF;   /* blu profondo dell'alone */
+    --gold:      #FFC24B;   /* Alba (lore) — usato con parsimonia */
+    --code-bg:   #080D15;
+    --shadow:    0 18px 50px -20px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background:
+      radial-gradient(1200px 600px at 50% -10%, rgba(63,227,255,.10), transparent 60%),
+      var(--ground);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 22px 100px; }
+
+  ::selection { background: var(--accent); color: #04222b; }
+
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(63,227,255,.3); }
+  a:hover { border-bottom-color: var(--accent); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+
+  /* ── eyebrow / section labels ── */
+  .eyebrow {
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 26px; height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+
+  /* ── HERO ── */
+  .hero { padding: 64px 0 30px; }
+  .hero-canvas-shell {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, #0c1420, #0a111b);
+    box-shadow: var(--shadow);
+    margin-top: 22px;
+  }
+  #heroCanvas { display: block; width: 100%; height: 300px; }
+  .pole-tag {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-family: 'Cascadia Code', monospace; font-size: 12px;
+    letter-spacing: 1px; color: var(--muted);
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .pole-tag .dot { font-size: 22px; line-height: 1; }
+  .pole-tag.a { left: 26px; } .pole-tag.a .dot { color: var(--gold); }
+  .pole-tag.b { right: 26px; } .pole-tag.b .dot { color: var(--accent); }
+
+  h1 {
+    font-size: clamp(42px, 8vw, 92px);
+    font-weight: 900;
+    line-height: .9;
+    letter-spacing: -1px;
+    text-transform: uppercase;
+    transform: skewX(-7deg);
+    transform-origin: left;
+    margin: 26px 0 0 4px;
+    color: var(--core);
+    text-shadow: 0 0 26px rgba(63,227,255,.45);
+  }
+  h1 .spark { color: var(--accent); }
+  .lede {
+    margin: 18px 0 0 4px;
+    font-size: clamp(16px, 2.4vw, 20px);
+    color: var(--text);
+    max-width: 62ch;
+  }
+  .lede strong { color: var(--accent); font-weight: 600; }
+
+  /* ── sections ── */
+  section { margin-top: 78px; }
+  h2 {
+    font-size: clamp(26px, 4vw, 38px);
+    font-weight: 900;
+    letter-spacing: -.5px;
+    text-transform: uppercase;
+    transform: skewX(-7deg);
+    transform-origin: left;
+    color: var(--core);
+    margin: 14px 0 4px;
+  }
+  .section-sub { color: var(--muted); max-width: 70ch; margin-bottom: 26px; }
+
+  /* ── anatomy grid ── */
+  .anatomy { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .ana-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 18px 16px;
+    position: relative;
+  }
+  .ana-card .n {
+    font-family: 'Cascadia Code', monospace; font-size: 12px;
+    color: var(--accent); letter-spacing: 1px;
+  }
+  .ana-card h3 { font-size: 17px; margin: 4px 0 6px; color: var(--core); }
+  .ana-card p { font-size: 13.5px; color: var(--muted); line-height: 1.55; }
+
+  /* ── timeline ── */
+  .timeline {
+    margin-top: 26px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 22px 18px;
+  }
+  .tl-track { position: relative; height: 3px; background: var(--surface-2); border-radius: 2px; margin: 32px 8px 8px; }
+  .tl-fill { position: absolute; inset: 0; background: linear-gradient(90deg, var(--core), var(--accent), var(--deep)); border-radius: 2px; opacity: .8; }
+  .tl-mark { position: absolute; top: -7px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+  .tl-mark i { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); display: block; }
+  .tl-mark b { font-family: 'Cascadia Code', monospace; font-size: 11px; color: var(--muted); margin-top: 10px; white-space: nowrap; }
+  .tl-mark span { font-size: 12px; color: var(--text); margin-top: 2px; white-space: nowrap; }
+  .tl-legend { color: var(--muted); font-size: 12.5px; margin-top: 28px; text-align: right; font-family: 'Cascadia Code', monospace; }
+
+  /* ── color ramp ── */
+  .ramp { display: flex; gap: 0; margin-top: 22px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+  .ramp div { flex: 1; padding: 14px 12px; font-family: 'Cascadia Code', monospace; font-size: 11.5px; }
+
+  /* ── asset cards ── */
+  .assets { display: flex; flex-direction: column; gap: 22px; }
+  .asset {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .asset-head { display: grid; grid-template-columns: 200px 1fr; gap: 0; }
+  @media (max-width: 720px) { .asset-head { grid-template-columns: 1fr; } }
+  .asset-preview {
+    background: #060a11;
+    border-right: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    min-height: 168px; padding: 18px;
+  }
+  @media (max-width: 720px) { .asset-preview { border-right: none; border-bottom: 1px solid var(--border); } }
+  .asset-preview canvas { max-width: 100%; image-rendering: auto; }
+  .asset-meta { padding: 20px 22px; }
+  .asset-meta .file {
+    font-family: 'Cascadia Code', monospace; font-size: 15px; color: var(--accent);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .badge {
+    font-family: 'Cascadia Code', monospace; font-size: 10.5px; letter-spacing: .5px;
+    padding: 2px 9px; border-radius: 20px; text-transform: uppercase;
+  }
+  .badge.key  { background: rgba(63,227,255,.16); color: var(--accent); border: 1px solid rgba(63,227,255,.4); }
+  .badge.opt  { background: rgba(126,144,168,.12); color: var(--muted); border: 1px solid var(--border); }
+  .badge.star { background: rgba(255,194,75,.14); color: var(--gold); border: 1px solid rgba(255,194,75,.4); }
+  .asset-meta .role { margin: 8px 0 12px; color: var(--text); font-size: 14px; }
+  .spec-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .spec {
+    font-family: 'Cascadia Code', monospace; font-size: 11.5px; color: var(--muted);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px;
+  }
+  .spec b { color: var(--text); font-weight: 600; }
+
+  /* ── prompt block ── */
+  .prompt-wrap { border-top: 1px solid var(--border); }
+  .prompt-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 18px; background: var(--surface-2);
+    font-family: 'Cascadia Code', monospace; font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .copy-btn {
+    font-family: 'Cascadia Code', monospace; font-size: 11px; letter-spacing: 1px;
+    background: transparent; color: var(--accent); border: 1px solid rgba(63,227,255,.4);
+    border-radius: 6px; padding: 5px 12px; cursor: pointer; text-transform: uppercase;
+    transition: background .15s, color .15s;
+  }
+  .copy-btn:hover { background: var(--accent); color: #04222b; }
+  .copy-btn.done { background: var(--accent); color: #04222b; border-color: var(--accent); }
+  pre.prompt {
+    margin: 0; padding: 18px; background: var(--code-bg);
+    font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12.5px; line-height: 1.65;
+    color: #b9e9f5; white-space: pre-wrap; word-break: break-word;
+    overflow-x: auto;
+  }
+
+  .note {
+    background: linear-gradient(180deg, rgba(63,227,255,.06), transparent);
+    border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 16px 20px; margin-top: 22px; font-size: 14px;
+  }
+  .note b { color: var(--accent); }
+  .note.gold { border-left-color: var(--gold); }
+  .note.gold b { color: var(--gold); }
+
+  /* reuse strip */
+  .reuse { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; margin-top: 18px; }
+  .reuse .r {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; text-align: center;
+  }
+  .reuse .r canvas { display:block; margin: 0 auto 8px; }
+  .reuse .r b { font-family: 'Cascadia Code', monospace; color: var(--accent); font-size: 13px; }
+  .reuse .r span { display:block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+  /* technique */
+  .tech-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px,1fr)); gap: 14px; }
+  .tech-step { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .tech-step .k { font-family: 'Cascadia Code', monospace; color: var(--gold); font-size: 12px; letter-spacing: 1px; }
+  .tech-step h4 { font-size: 15px; margin: 6px 0 6px; color: var(--core); }
+  .tech-step p { font-size: 13px; color: var(--muted); }
+  .tech-step code { font-family: 'Cascadia Code', monospace; color: var(--accent); font-size: 12px; }
+
+  footer { margin-top: 70px; padding-top: 26px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12.5px; }
+  footer .srcs { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-family: 'Cascadia Code', monospace; font-size: 11.5px; }
+
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ════════════════ HERO ════════════════ -->
+  <header class="hero">
+    <span class="eyebrow">FunKoolkan · VFX‑firma · brief texture</span>
+    <div class="hero-canvas-shell">
+      <canvas id="heroCanvas" aria-label="Anteprima animata dell'arco di mana da Alba a Tramonto"></canvas>
+      <div class="pole-tag a"><span class="dot">◐</span>ALBA · A</div>
+      <div class="pole-tag b"><span class="dot">◑</span>TRAMONTO · B</div>
+    </div>
+    <h1>Scarica di <span class="spark">mana</span></h1>
+    <p class="lede">Quando il circuito si chiude, un <strong>arco elettrico spesso, blu‑bianco e cartoon</strong> frusta da un polo all'altro in un lampo, poi svanisce. È lo screenshot di copertina del gioco. Qui sotto: com'è fatto il risultato finale, e i <strong>prompt pronti per ChatGPT</strong> per generare ogni texture‑particella.</p>
+  </header>
+
+  <!-- ════════════════ IL RISULTATO ════════════════ -->
+  <section>
+    <span class="eyebrow">Il risultato</span>
+    <h2>Cosa si vede a schermo</h2>
+    <p class="section-sub">Un fulmine <b style="color:var(--text)">buffo/cartoon</b>, non realistico: spessore esagerato, forme pulite con bordo netto, pochi rami ben leggibili — niente filamenti sottili da documentario. Tutto dura un battito di ciglia e sfarfalla.</p>
+
+    <div class="anatomy">
+      <div class="ana-card"><div class="n">01</div><h3>Spina (core)</h3><p>Banda bianca incandescente, spessa, dal bordo netto. È la linea che “legge” come fulmine.</p></div>
+      <div class="ana-card"><div class="n">02</div><h3>Alone (glow)</h3><p>Bagliore ciano additivo attorno alla spina, più intenso dove i segmenti si sovrappongono (i “gomiti”).</p></div>
+      <div class="ana-card"><div class="n">03</div><h3>Rami (forks)</h3><p>1–2 diramazioni a ~45° che partono dal tronco e si spengono subito. Danno la silhouette “zap” da fumetto.</p></div>
+      <div class="ana-card"><div class="n">04</div><h3>Crackle</h3><p>Saette‑frammento che schizzano lungo l'arco ed esplodono ai capi: è la firma cartoon dell'effetto.</p></div>
+      <div class="ana-card"><div class="n">05</div><h3>Scintille</h3><p>Spark direzionali bianco‑ciano sparate dai due poli al momento dell'impatto.</p></div>
+      <div class="ana-card"><div class="n">06</div><h3>Lampo + scossa</h3><p>Pop bianco accecante sui poli (A e B) + micro screen‑shake che vende l'impatto.</p></div>
+    </div>
+
+    <div class="timeline">
+      <div class="eyebrow" style="color:var(--muted)">Timing — ~300 ms in tutto</div>
+      <div class="tl-track">
+        <div class="tl-fill"></div>
+        <div class="tl-mark" style="left:2%"><i></i><b>0 ms</b><span>flash + shake</span></div>
+        <div class="tl-mark" style="left:22%"><i></i><b>~20 ms</b><span>strike #1</span></div>
+        <div class="tl-mark" style="left:50%"><i></i><b>~120 ms</b><span>re‑strike #2</span></div>
+        <div class="tl-mark" style="left:74%"><i></i><b>~200 ms</b><span>re‑strike #3</span></div>
+        <div class="tl-mark" style="left:98%"><i></i><b>~300 ms</b><span>dissolve</span></div>
+      </div>
+      <div class="tl-legend">il flash parte PRIMA del bolt · ogni re‑strike è un nuovo jitter con alpha che sfarfalla</div>
+    </div>
+
+    <div class="ramp" aria-label="Rampa di colore">
+      <div style="background:#EAF8FF;color:#04222b">#EAF8FF<br>core</div>
+      <div style="background:#3FE3FF;color:#04222b">#3FE3FF<br>glow</div>
+      <div style="background:#1E6BFF;color:#fff">#1E6BFF<br>alone est.</div>
+      <div style="background:#0D141F;color:#7E90A8">#0D141F<br>fondo</div>
+    </div>
+  </section>
+
+  <!-- ════════════════ GLI ASSET ════════════════ -->
+  <section>
+    <span class="eyebrow">Gli asset</span>
+    <h2>Le particelle da creare</h2>
+    <p class="section-sub">Texture nuove da generare con ChatGPT. Per ognuna: anteprima indicativa, specifiche e <b style="color:var(--text)">prompt pronto da incollare</b>.</p>
+
+    <div class="note">
+      <b>Regole valide per tutti i prompt.</b> Chiedi a ChatGPT di <b>generare un'immagine</b> usando il prompt <b>in inglese</b> (rende molto meglio). Sfondo: <b>nero pieno</b> — in blending additivo il nero è invisibile, ed è banale convertirlo in alpha; in alternativa chiedi “transparent background / PNG with alpha”. Un solo elemento <b>centrato</b>, niente testo, niente scenario, niente cornice.
+    </div>
+
+    <div class="assets" style="margin-top:22px">
+
+      <!-- bolt_segment -->
+      <article class="asset">
+        <div class="asset-head">
+          <div class="asset-preview"><canvas data-draw="segment" width="240" height="120"></canvas></div>
+          <div class="asset-meta">
+            <div class="file">bolt_segment.png <span class="badge key">indispensabile</span></div>
+            <p class="role">Il <b>corpo</b> dell'arco: striscia stirata/ripetuta lungo ogni segmento del fulmine e ruotata per seguirlo. È la texture chiave.</p>
+            <div class="spec-list">
+              <span class="spec"><b>~256×64</b></span>
+              <span class="spec">tileable <b>↔ orizzontale</b></span>
+              <span class="spec">core bianco + glow ciano</span>
+              <span class="spec">additivo</span>
+            </div>
+          </div>
+        </div>
+        <div class="prompt-wrap">
+          <div class="prompt-bar"><span>Prompt ChatGPT</span><button class="copy-btn" type="button">Copia</button></div>
+          <pre class="prompt">A horizontal energy-beam strip texture for a 2D game lightning bolt, seamless and tileable left-to-right. A thick bright white-hot core line runs horizontally through the exact center, wrapped in a soft electric-cyan glow that fades smoothly to black toward the top and bottom edges. Bold, clean, stylized cartoon look like a mobile puzzle game VFX — NOT realistic, no thin filaments, no noise. Pure solid black background. The beam fills the full width edge to edge and is perfectly centered vertically. No text, no other objects. Wide strip, 4:1 aspect ratio, high contrast, crisp glow.</pre>
+        </div>
+      </article>
+
+      <!-- bolt_shard -->
+      <article class="asset">
+        <div class="asset-head">
+          <div class="asset-preview"><canvas data-draw="shard" width="150" height="150"></canvas></div>
+          <div class="asset-meta">
+            <div class="file">bolt_shard_01–03.png <span class="badge star">firma cartoon</span></div>
+            <p class="role">Mini‑saette a zigzag (lo “zap” da fumetto) che schizzano lungo l'arco ed esplodono ai capi. <b>Genera 2–3 varianti</b> con zigzag diversi.</p>
+            <div class="spec-list">
+              <span class="spec"><b>~64×64</b></span>
+              <span class="spec">core bianco + <b>outline ciano</b></span>
+              <span class="spec">3 varianti</span>
+              <span class="spec">additivo</span>
+            </div>
+          </div>
+        </div>
+        <div class="prompt-wrap">
+          <div class="prompt-bar"><span>Prompt ChatGPT — chiedi 3 varianti</span><button class="copy-btn" type="button">Copia</button></div>
+          <pre class="prompt">A single cartoon lightning-bolt shard icon for a game particle effect: a short, CHUNKY zigzag lightning bolt in comic-book "zap" style, with a bright white core and a bold electric-cyan outline and glow. Thick, clean, exaggerated and stylized — like a Clash Royale / Puzzle Bobble spark VFX, NOT realistic, no thin branches. Pure solid black background, one single centered bolt filling most of the frame, no text, no other objects. Square image, punchy and readable even at small size. Generate 3 variants with different zigzag shapes (one straighter, one more crooked, one S-shaped).</pre>
+        </div>
+      </article>
+
+      <!-- spark_streak -->
+      <article class="asset">
+        <div class="asset-head">
+          <div class="asset-preview"><canvas data-draw="streak" width="240" height="120"></canvas></div>
+          <div class="asset-meta">
+            <div class="file">spark_streak.png <span class="badge opt">polish</span></div>
+            <p class="role">Scintilla allungata e direzionale, sparata dai poli e dall'arco; orientata via <code style="color:var(--accent);font-family:'Cascadia Code',monospace">node.angle</code> nella direzione di volo.</p>
+            <div class="spec-list">
+              <span class="spec"><b>~64×16</b></span>
+              <span class="spec">testa bianca → coda trasparente</span>
+              <span class="spec">additivo</span>
+            </div>
+          </div>
+        </div>
+        <div class="prompt-wrap">
+          <div class="prompt-bar"><span>Prompt ChatGPT</span><button class="copy-btn" type="button">Copia</button></div>
+          <pre class="prompt">A small directional spark streak for a game particle effect: a bright white-hot comet/teardrop shape with a sharp glowing head on the LEFT that fades into a thin electric-cyan tail toward the RIGHT. Clean stylized cartoon VFX look, NOT realistic. Pure solid black background, one single centered streak oriented horizontally, no text, no other objects. Horizontal strip, 4:1 aspect ratio, high contrast.</pre>
+        </div>
+      </article>
+
+      <!-- impact_flash -->
+      <article class="asset">
+        <div class="asset-head">
+          <div class="asset-preview"><canvas data-draw="flash" width="150" height="150"></canvas></div>
+          <div class="asset-meta">
+            <div class="file">impact_flash.png <span class="badge opt">polish</span></div>
+            <p class="role">Lampo d'impatto: un pop singolo e brevissimo quando il bolt tocca ciascun polo. Vende l'urto.</p>
+            <div class="spec-list">
+              <span class="spec"><b>~256×256</b></span>
+              <span class="spec">starburst a punte</span>
+              <span class="spec">centro bianco + raggi ciano</span>
+              <span class="spec">additivo</span>
+            </div>
+          </div>
+        </div>
+        <div class="prompt-wrap">
+          <div class="prompt-bar"><span>Prompt ChatGPT</span><button class="copy-btn" type="button">Copia</button></div>
+          <pre class="prompt">A bold cartoon impact flash / energy starburst for a game VFX: an intense white-hot center with sharp radiating spikes of light that turn electric-cyan toward their tips, like a comic "POW" / zap burst. Symmetrical, clean, stylized — NOT realistic, no smoke, no debris. Pure solid black background, one single centered burst filling most of the frame, no text, no other objects. Square image, very high contrast, glowing.</pre>
+        </div>
+      </article>
+
+    </div>
+
+    <!-- reuse -->
+    <h3 style="margin:40px 0 4px;font-size:16px;color:var(--core)">Già in <code style="font-family:'Cascadia Code',monospace;color:var(--accent)">resources/particles/</code> — si riusano, tinte di ciano</h3>
+    <p class="section-sub" style="margin-bottom:0">Niente da rigenerare: queste coprono cap, glow e i twinkle ai poli.</p>
+    <div class="reuse">
+      <div class="r"><canvas data-draw="atom" width="60" height="60"></canvas><b>atom.png</b><span>cap + nodi glow</span></div>
+      <div class="r"><canvas data-draw="sparkle" width="60" height="60"></canvas><b>sparkle.png</b><span>twinkle ai poli</span></div>
+      <div class="r"><canvas data-draw="aura" width="60" height="60"></canvas><b>aura.png</b><span>bloom ambientale</span></div>
+    </div>
+
+    <div class="note gold">
+      <b>Se ne fai solo due:</b> <code style="font-family:'Cascadia Code',monospace">bolt_segment</code> (il corpo) + <code style="font-family:'Cascadia Code',monospace">bolt_shard</code> (la firma cartoon). Con quelle due più atom/sparkle/aura la scarica è già completa; streak e flash sono il polish.
+    </div>
+  </section>
+
+  <!-- ════════════════ LA TECNICA ════════════════ -->
+  <section>
+    <span class="eyebrow">La tecnica · perché queste texture</span>
+    <h2>Come verrà costruita</h2>
+    <p class="section-sub">Esito della ricerca: approccio <b style="color:var(--text)">ibrido forma‑in‑codice + render a sprite‑segmento</b> — la soluzione che dà il bolt cartoon più nitido restando dentro la regola “niente <code style="font-family:'Cascadia Code',monospace">Graphics</code>”.</p>
+    <div class="tech-grid">
+      <div class="tech-step">
+        <div class="k">FORMA</div>
+        <h4>Polyline in TypeScript</h4>
+        <p>Midpoint‑displacement (Drilian): offset perpendicolare alla retta A→B, dimezzato a ogni generazione, + 1 fork a 45°. Funziona per qualsiasi lunghezza/angolo a runtime.</p>
+      </div>
+      <div class="tech-step">
+        <div class="k">RENDER</div>
+        <h4>Catena di sprite‑segmento</h4>
+        <p><code>bolt_segment</code> stirato (middle tileable) + cap, uno per segmento, ruotato con <code>node.angle = atan2(dy,dx)</code>. Pooling con <code>NodePool</code>.</p>
+      </div>
+      <div class="tech-step">
+        <div class="k">GLOW</div>
+        <h4>Blend additivo nel material</h4>
+        <p>In Cocos il blend del <b>material</b> prevale su quello da codice → l'additivo (<code>dst = ONE</code>) va impostato nel <code>.mtl</code>, non via script.</p>
+      </div>
+      <div class="tech-step">
+        <div class="k">PARTICELLE</div>
+        <h4>ParticleSystem2D + flash</h4>
+        <p>Scintille/crackle/flash additivi. Nota: solo emitter GRAVITY/RADIUS, <b>nessun line‑emitter</b> → emettitori ai vertici o riposizionati lungo il path.</p>
+      </div>
+      <div class="tech-step">
+        <div class="k">PROSPETTIVA</div>
+        <h4>Solo i capi proiettati</h4>
+        <p>A e B ancorati alle posizioni a schermo dei poli; il path spezzato vive in spazio piatto — l'irregolarità maschera l'assenza di prospettiva.</p>
+      </div>
+      <div class="tech-step">
+        <div class="k">OPZIONALE</div>
+        <h4>Shader .effect</h4>
+        <p>Un <code>.effect</code> procedurale (UV scroll/noise) come glow di sfondo è un enhancement, <b>non</b> il bolt principale: più costoso e meno nitido come hero cartoon.</p>
+      </div>
+    </div>
+
+    <footer>
+      Brief generato per FunKoolkan · texture additive su fondo nero · niente <code style="font-family:'Cascadia Code',monospace">Graphics</code> in contenuto shippato.
+      <div class="srcs">
+        <span>Fonti ricerca:</span>
+        <a href="http://drilian.com/2009/02/25/lightning-bolts/">Drilian · 2D lightning</a>
+        <a href="https://github.com/tutsplus/shockingly-good-2d-lightning-effects-unity">Tuts+ · segment render</a>
+        <a href="https://docs.cocos.com/creator/3.8/manual/en/particle-system/2d-particle/2d-particle.html">Cocos · ParticleSystem2D</a>
+        <a href="https://docs.cocos.com/creator/3.8/manual/en/ui-system/components/engine/ui-material.html">Cocos · custom material</a>
+        <a href="https://www.digitalruby.com/lightning-for-unity-3d/">Digital Ruby · trunk+fork</a>
+      </div>
+    </footer>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var ACCENT = "#3FE3FF", CORE = "#EAF8FF", DEEP = "#1E6BFF", GOLD = "#FFC24B";
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---- deterministic-ish RNG so previews are stable per draw ----
+  function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+  // ---- midpoint-displacement polyline A->B (the real algorithm we ship) ----
+  function makeBolt(ax, ay, bx, by, gens, sway, rng) {
+    var pts = [{x:ax,y:ay},{x:bx,y:by}];
+    var off = sway;
+    for (var g=0; g<gens; g++) {
+      var np = [];
+      for (var i=0; i<pts.length-1; i++) {
+        var p0 = pts[i], p1 = pts[i+1];
+        np.push(p0);
+        var mx=(p0.x+p1.x)/2, my=(p0.y+p1.y)/2;
+        var dx=p1.x-p0.x, dy=p1.y-p0.y, len=Math.hypot(dx,dy)||1;
+        var nx=-dy/len, ny=dx/len;            // perpendicular
+        var d=(rng()*2-1)*off;
+        np.push({x:mx+nx*d, y:my+ny*d});
+      }
+      np.push(pts[pts.length-1]);
+      pts=np; off*=0.5;
+    }
+    return pts;
+  }
+  function strokePath(ctx, pts, w, color, alpha) {
+    ctx.globalAlpha = alpha; ctx.strokeStyle = color;
+    ctx.lineWidth = w; ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (var i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+  }
+  function drawBolt(ctx, pts, scale) {
+    ctx.globalCompositeOperation = "lighter";
+    strokePath(ctx, pts, 16*scale, DEEP, 0.30);
+    strokePath(ctx, pts, 9*scale,  ACCENT, 0.55);
+    strokePath(ctx, pts, 3.4*scale, CORE, 1.0);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  }
+
+  // ================= HERO =================
+  var hero = document.getElementById("heroCanvas");
+  if (hero) {
+    var hctx = hero.getContext("2d");
+    function fit() {
+      var dpr = Math.min(window.devicePixelRatio||1, 2);
+      var w = hero.clientWidth, h = hero.clientHeight;
+      hero.width = w*dpr; hero.height = h*dpr; hctx.setTransform(dpr,0,0,dpr,0,0);
+      return {w:w,h:h};
+    }
+    var dim = fit();
+    window.addEventListener("resize", function(){ dim = fit(); });
+
+    var seedN = 1, strike = null, nextAt = 0;
+    function newStrike(t) {
+      seedN++;
+      var rng = mulberry(seedN*99991);
+      var pad = Math.max(70, dim.w*0.12);
+      var ay = dim.h*0.5 + (rng()*2-1)*18;
+      var by = dim.h*0.5 + (rng()*2-1)*18;
+      var pts = makeBolt(pad, ay, dim.w-pad, by, 6, Math.min(70, dim.h*0.28), rng);
+      // a fork off a mid vertex
+      var fi = 2 + Math.floor(rng()*(pts.length-4));
+      var fp = pts[fi];
+      var fork = makeBolt(fp.x, fp.y, fp.x+(rng()*2-1)*120, fp.y+(rng()<.5?-1:1)*(40+rng()*60), 4, 22, rng);
+      strike = { pts: pts, fork: fork, born: t, life: 360, restrikes: 2, rng: rng,
+                 ax:pad, ay:ay, bx:dim.w-pad, by:by };
+    }
+    function flash(ctx, x, y, r, a) {
+      ctx.globalCompositeOperation="lighter";
+      var g=ctx.createRadialGradient(x,y,0,x,y,r);
+      g.addColorStop(0,"rgba(234,248,255,"+a+")");
+      g.addColorStop(0.4,"rgba(63,227,255,"+(a*0.5)+")");
+      g.addColorStop(1,"rgba(63,227,255,0)");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+      ctx.globalCompositeOperation="source-over";
+    }
+
+    function frame(t) {
+      hctx.clearRect(0,0,dim.w,dim.h);
+      // baseline poles glow
+      flash(hctx, Math.max(70,dim.w*0.12), dim.h/2, 26, 0.25);
+      flash(hctx, dim.w-Math.max(70,dim.w*0.12), dim.h/2, 26, 0.32);
+
+      if (!strike || t>nextAt) { newStrike(t); nextAt = t + 2100; }
+      var age = t - strike.born;
+      // alpha flicker across the short life, re-jitter on each restrike window
+      var seg = Math.floor(age/120);
+      if (seg>0 && seg<=strike.restrikes && strike._seg!==seg) {
+        strike._seg=seg;
+        var rng=strike.rng;
+        strike.pts=makeBolt(strike.ax,strike.ay,strike.bx,strike.by,6,Math.min(70,dim.h*0.28),rng);
+      }
+      if (age < strike.life) {
+        var k = 1 - age/strike.life;
+        var flick = 0.55 + 0.45*Math.abs(Math.sin(age*0.06));
+        var a = Math.max(0, k)*flick;
+        if (age<90) flash(hctx, strike.ax, strike.ay, 60*(1-age/90)+18, 0.9*(1-age/90)+0.1);
+        if (age<90) flash(hctx, strike.bx, strike.by, 60*(1-age/90)+18, 0.9*(1-age/90)+0.1);
+        hctx.save(); hctx.globalAlpha=a;
+        drawBolt(hctx, strike.pts, 1);
+        drawBolt(hctx, strike.fork, 0.6);
+        hctx.restore();
+      }
+      if (!reduce) requestAnimationFrame(frame);
+    }
+    if (reduce) {
+      // static single strike
+      newStrike(0); strike.born=-9999;
+      var rng=mulberry(7); strike.pts=makeBolt(strike.ax,strike.ay,strike.bx,strike.by,6,Math.min(70,dim.h*0.28),rng);
+      flash(hctx, strike.ax, strike.ay, 50, 0.8); flash(hctx, strike.bx, strike.by, 50, 0.8);
+      drawBolt(hctx, strike.pts, 1); drawBolt(hctx, strike.fork, 0.6);
+    } else {
+      requestAnimationFrame(frame);
+    }
+  }
+
+  // ================= STATIC PREVIEWS =================
+  function setup(cv) {
+    var dpr = Math.min(window.devicePixelRatio||1, 2);
+    var w = cv.width, h = cv.height;
+    cv.style.width = w+"px"; cv.style.height = h+"px";
+    cv.width = w*dpr; cv.height = h*dpr;
+    var ctx = cv.getContext("2d"); ctx.scale(dpr,dpr);
+    return {ctx:ctx,w:w,h:h};
+  }
+  var drawers = {
+    segment: function(ctx,w,h){
+      ctx.globalCompositeOperation="lighter";
+      // glow band
+      var g=ctx.createLinearGradient(0,0,0,h);
+      g.addColorStop(0,"rgba(30,107,255,0)");
+      g.addColorStop(0.5,"rgba(63,227,255,0.85)");
+      g.addColorStop(1,"rgba(30,107,255,0)");
+      ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+      // white core
+      ctx.fillStyle=CORE; ctx.fillRect(0,h/2-3,w,6);
+      ctx.shadowColor=CORE; ctx.shadowBlur=10; ctx.fillRect(0,h/2-2,w,4);
+      ctx.shadowBlur=0; ctx.globalCompositeOperation="source-over";
+    },
+    shard: function(ctx,w,h){
+      var rng=mulberry(42);
+      var pts=makeBolt(w*0.5,h*0.12,w*0.5,h*0.88,4,16,rng);
+      ctx.globalCompositeOperation="lighter";
+      strokePath(ctx,pts,16,DEEP,0.3);
+      strokePath(ctx,pts,11,ACCENT,0.7);
+      strokePath(ctx,pts,4,CORE,1);
+      ctx.globalCompositeOperation="source-over";
+    },
+    streak: function(ctx,w,h){
+      ctx.globalCompositeOperation="lighter";
+      var g=ctx.createLinearGradient(w*0.18,0,w*0.95,0);
+      g.addColorStop(0,"rgba(234,248,255,1)");
+      g.addColorStop(0.25,"rgba(63,227,255,0.8)");
+      g.addColorStop(1,"rgba(63,227,255,0)");
+      ctx.fillStyle=g; ctx.beginPath();
+      ctx.moveTo(w*0.18,h/2); ctx.quadraticCurveTo(w*0.5,h/2-9,w*0.95,h/2);
+      ctx.quadraticCurveTo(w*0.5,h/2+9,w*0.18,h/2); ctx.fill();
+      // bright head
+      var hg=ctx.createRadialGradient(w*0.2,h/2,0,w*0.2,h/2,14);
+      hg.addColorStop(0,"rgba(234,248,255,1)"); hg.addColorStop(1,"rgba(63,227,255,0)");
+      ctx.fillStyle=hg; ctx.beginPath(); ctx.arc(w*0.2,h/2,14,0,7); ctx.fill();
+      ctx.globalCompositeOperation="source-over";
+    },
+    flash: function(ctx,w,h){
+      var cx=w/2, cy=h/2, R=Math.min(w,h)*0.46;
+      ctx.globalCompositeOperation="lighter";
+      ctx.translate(cx,cy);
+      for (var i=0;i<12;i++){
+        var a=i*Math.PI/6, long=(i%2===0);
+        var r=long?R:R*0.5;
+        ctx.fillStyle = long?ACCENT:DEEP;
+        ctx.globalAlpha = long?0.9:0.6;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a-0.12)*8,Math.sin(a-0.12)*8);
+        ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);
+        ctx.lineTo(Math.cos(a+0.12)*8,Math.sin(a+0.12)*8);
+        ctx.fill();
+      }
+      ctx.globalAlpha=1;
+      var cg=ctx.createRadialGradient(0,0,0,0,0,R*0.6);
+      cg.addColorStop(0,"rgba(234,248,255,1)"); cg.addColorStop(0.5,"rgba(63,227,255,0.6)"); cg.addColorStop(1,"rgba(63,227,255,0)");
+      ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(0,0,R*0.6,0,7); ctx.fill();
+      ctx.globalCompositeOperation="source-over";
+    },
+    atom: function(ctx,w,h){
+      ctx.globalCompositeOperation="lighter";
+      var g=ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2);
+      g.addColorStop(0,"rgba(234,248,255,1)"); g.addColorStop(0.4,"rgba(63,227,255,0.7)"); g.addColorStop(1,"rgba(63,227,255,0)");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(w/2,h/2,w/2,0,7); ctx.fill();
+      ctx.globalCompositeOperation="source-over";
+    },
+    sparkle: function(ctx,w,h){
+      ctx.globalCompositeOperation="lighter"; ctx.translate(w/2,h/2); ctx.strokeStyle=CORE; ctx.fillStyle=ACCENT;
+      for(var i=0;i<4;i++){var a=i*Math.PI/4; var r=(i%2?w*0.22:w*0.46);
+        ctx.globalAlpha=i%2?0.5:1; ctx.lineWidth=i%2?2:3;
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r); ctx.lineTo(0,0); ctx.lineTo(-Math.cos(a)*r,-Math.sin(a)*r); ctx.stroke();}
+      ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over";
+    },
+    aura: function(ctx,w,h){
+      ctx.globalCompositeOperation="lighter";
+      var g=ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2);
+      g.addColorStop(0,"rgba(63,227,255,0.5)"); g.addColorStop(0.7,"rgba(63,227,255,0.12)"); g.addColorStop(1,"rgba(63,227,255,0)");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(w/2,h/2,w/2,0,7); ctx.fill();
+      ctx.globalCompositeOperation="source-over";
+    }
+  };
+  var canvases = document.querySelectorAll("canvas[data-draw]");
+  for (var i=0;i<canvases.length;i++){
+    (function(cv){
+      var d=setup(cv); var fn=drawers[cv.getAttribute("data-draw")];
+      if(fn) fn(d.ctx,d.w,d.h);
+    })(canvases[i]);
+  }
+
+  // ================= COPY BUTTONS =================
+  var btns = document.querySelectorAll(".copy-btn");
+  for (var b=0;b<btns.length;b++){
+    btns[b].addEventListener("click", function(){
+      var btn=this;
+      var pre=btn.closest(".asset").querySelector("pre.prompt");
+      var text=pre.innerText;
+      var done=function(){ btn.classList.add("done"); btn.textContent="Copiato ✓"; setTimeout(function(){btn.classList.remove("done"); btn.textContent="Copia";},1600); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done,done);
+      else { var r=document.createRange(); r.selectNode(pre); var s=getSelection(); s.removeAllRanges(); s.addRange(r); try{document.execCommand("copy");}catch(e){} s.removeAllRanges(); done(); }
+    });
+  }
+})();
+</script>
+</body>
+</html>

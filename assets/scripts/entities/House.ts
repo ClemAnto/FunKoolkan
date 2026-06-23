@@ -83,6 +83,27 @@ export class House extends Component {
         this._teeHit = live && teeHit;
     }
 
+    /** Stones whose projected footprint overlaps the HOUSE ring. Fills `out` (cleared first). */
+    collectStonesInHouse(out: Stone[]): void { this._collect(this._house, out); }
+    /** Stones whose projected footprint overlaps the TEE. Fills `out` (cleared first). */
+    collectStonesOnTee(out: Stone[]): void { this._collect(this._tee, out); }
+
+    /** Shared query for the curling scoring: every live stone whose on-screen ellipse overlaps `zone`
+     *  (same projected-position test as the debug detection). Zones are refreshed each frame in update(). */
+    private _collect(zone: Zone, out: Stone[]): void {
+        out.length = 0;
+        if (zone.rx <= 0 || zone.ry <= 0) return;
+        const stones = Stone.all;
+        for (let i = 0; i < stones.length; i++) {
+            const st = stones[i];
+            if (!st.node?.isValid) continue;
+            const p = st.node.position;                          // ground space
+            const svx = projectX(p.x, p.y), svy = projectY(p.y); // → arena-local visual
+            const srx = st.radius * sizeXFactor(p.y), sry = st.radius * sizeYFactor(p.y);
+            if (this._overlaps(zone, svx, svy, srx, sry)) out.push(st);
+        }
+    }
+
     /** Whether a stone (on-screen centre + radii) overlaps the zone's ellipse — the stone is treated as
      *  a point and the ellipse inflated by the stone's on-screen radii (a good "touching" approximation). */
     private _overlaps(zone: Zone, svx: number, svy: number, srx: number, sry: number): boolean {
