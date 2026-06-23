@@ -8,6 +8,20 @@ export interface RuneType {
 }
 
 /**
+ * Named view of the rune type ids — used for the EDITOR dropdown (Rune.gemType) and for readable code.
+ * Each entry's value IS the gem id. MUST stay aligned with RUNES below (RuneKind.X === RUNES[X].id) and
+ * with the `gem_*` node order in the Rune prefab (gems[id]).
+ */
+export enum RuneKind {
+    Green = 0,
+    Yellow = 1,
+    Red = 2,
+    Turquoise = 3,
+    Purple = 4,
+    Amber = 5,
+}
+
+/**
  * The 6 rune types — the single SOURCE OF TRUTH for identifying a rune/stone in gameplay.
  *
  * `id` is the gem type used throughout (Rune.setType, the launch queue, scoring…).

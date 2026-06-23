@@ -1,5 +1,6 @@
 import { _decorator, Component, Node, Vec2, RigidBody2D, ERigidBody2DType, PolygonCollider2D, CCFloat, CCInteger, Graphics, Color } from 'cc';
 import { projectX, projectY, unprojectY, configurePerspective, physicsDepth } from '../config/Perspective';
+import { DebugDraw } from '../config/DebugDraw';
 import { FitScale } from '../ui/FitScale';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
@@ -61,6 +62,7 @@ export class ArenaBounds extends Component {
     private _walls: Node[] = [];
     private _boundaryImg: Vec2[] = [];
     private _boundaryPhys: Vec2[] = [];
+    private _dbg: Graphics | null = null;   // outline overlay, shown reactively (per-instance flag OR global DebugDraw)
 
     /** CCW boundary loop in PHYSICS (de-squashed) local space — the exact polyline the wall
      *  colliders were built on. Empty until rebuild() has run. Consumers reflect off p[i]→p[i+1]
@@ -70,7 +72,14 @@ export class ArenaBounds extends Component {
     get boundaryImage(): readonly Vec2[] { return this._boundaryImg; }
 
     start(): void { this.rebuild(); }
-    onDestroy(): void { this._clear(); }
+    onDestroy(): void { this._clear(); if (this._dbg?.isValid) this._dbg.node.destroy(); this._dbg = null; }
+
+    /** Show/hide the rim outline reactively: the per-instance `showDebugOutline` OR the global DebugDraw
+     *  switch (the HUD DEBUG button). The boundary is static, so this just redraws/clears the overlay. */
+    update(): void {
+        if (this.showDebugOutline || DebugDraw.enabled) this._drawOutline();
+        else if (this._dbg?.isValid) this._dbg.clear();
+    }
 
     private _clear(): void {
         for (const w of this._walls) if (w.isValid) w.destroy();
@@ -133,29 +142,31 @@ export class ArenaBounds extends Component {
                 new Vec2(p0.x, p0.y),
             ]);
         }
-
-        // Debug: trace the ACTUAL physics walls (ground space) projected back to visual.
-        if (this.showDebugOutline) this._drawOutline();
+        // The debug outline is driven reactively by update() (per-instance flag OR the global DebugDraw).
     }
 
     /** Draw the real physics walls (ground space) projected FORWARD (projectX/projectY), so the
      *  cyan overlay must land exactly on the painted arena floor — a forward-projection sanity
-     *  check. If the projection is mis-calibrated (wrong sFar), the overlay won't match the art. */
+     *  check. If the projection is mis-calibrated (wrong sFar), the overlay won't match the art.
+     *  Uses a persistent child Graphics (created once) so it can be cleared/redrawn as the flag flips. */
     private _drawOutline(): void {
         const b = this._boundaryPhys;
-        if (b.length < 2) return;
-        const node = new Node('BoundsDebug');
-        node.layer = this.node.layer;
-        node.setParent(this.node);
-        node.setPosition(0, 0, 0);
-        const g = node.addComponent(Graphics);
-        g.lineWidth = 3;
-        g.strokeColor = new Color(0, 255, 255, 220);
+        if (b.length < 2) { if (this._dbg?.isValid) this._dbg.clear(); return; }
+        if (!this._dbg?.isValid) {
+            const node = new Node('BoundsDebug');
+            node.layer = this.node.layer;
+            node.setParent(this.node);
+            node.setPosition(0, 0, 0);
+            this._dbg = node.addComponent(Graphics);
+            this._dbg.lineWidth = 3;
+            this._dbg.strokeColor = new Color(0, 255, 255, 220);
+        }
+        const g = this._dbg;
+        g.clear();
         g.moveTo(projectX(b[0].x, b[0].y), projectY(b[0].y));
         for (let i = 1; i < b.length; i++) g.lineTo(projectX(b[i].x, b[i].y), projectY(b[i].y));
         g.close();
         g.stroke();
-        this._walls.push(node);
     }
 
     private _spawnWall(name: string, points: Vec2[]): void {

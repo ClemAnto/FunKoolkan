@@ -27,15 +27,15 @@ export class CurlingScorer extends Component {
     @property({ type: ManaDischarge, tooltip: 'The discharge VFX fired from the TEE stone to each matching stone.' })
     discharge: ManaDischarge | null = null;
 
-    @property({ tooltip: 'A stone on the TEE counts as "stopped" when its speed drops below this (physics units/s). Keep it small — it should be near-zero, i.e. actually parked.' })
-    restSpeed = 8;
+    @property({ tooltip: 'A stone on the TEE counts as "stopped" when its speed drops below this (physics units/s). Keep it SMALL — near-zero, i.e. actually parked. Too high and a stone still gliding across the tee counts as stopped and fires early.' })
+    restSpeed = 10;
 
-    @property({ tooltip: 'It must stay stopped on the TEE for this long (s) before firing — so a stone merely gliding across the tee does not trigger.' })
+    @property({ tooltip: 'It must stay below restSpeed on the TEE for this long (s) before firing — so a stone merely gliding across the tee does not trigger.' })
     restDelay = 0.15;
 
     private _served: Node | null = null;            // tee stone already zapped (one-shot until the tee clears)
-    private _candidate: Node | null = null;         // stone currently settling on the tee
-    private _dwell = 0;                             // how long the candidate has stayed stopped on the tee
+    private _candidate: Node | null = null;         // stone currently resting on the tee
+    private _dwell = 0;                             // how long the candidate has stayed below restSpeed on the tee
     private readonly _onTee: Stone[] = [];
     private readonly _inHouse: Stone[] = [];
 
@@ -50,23 +50,23 @@ export class CurlingScorer extends Component {
         if (!this.house || !this.discharge) return;
         this.house.collectStonesOnTee(this._onTee);
 
-        // A stone triggers only once it has actually PARKED on the tee: a DYNAMIC body (a stone being
-        // dragged in EDIT mode is Kinematic → ignored, so a drag never fires), with speed below restSpeed,
-        // sustained for restDelay seconds. So it fires when a launched stone comes to rest there, and when
-        // an edit-mode drop settles (the released body is Dynamic at rest) — never while it glides across.
+        // The discharge fires when a stone is genuinely STOPPED on the tee: a DYNAMIC body (a stone being
+        // dragged in EDIT mode is Kinematic → ignored, so a drag never fires) whose speed has dropped below
+        // restSpeed and STAYS below it for restDelay seconds. A stone still gliding across the tee is above
+        // restSpeed (so it is not picked, and never accrues dwell) → it does not fire until it actually rests.
         let cand: Stone | null = null;
         const maxSqr = this.restSpeed * this.restSpeed;
         for (let i = 0; i < this._onTee.length; i++) {
             const s = this._onTee[i];
             const rb = s.getComponent(RigidBody2D);
-            if (!rb || rb.type !== ERigidBody2DType.Dynamic) continue;   // dragged (Kinematic) / static → not at rest
+            if (!rb || rb.type !== ERigidBody2DType.Dynamic) continue;   // dragged (Kinematic) / static → not a resting launch
             const v = rb.linearVelocity;
-            if (v.x * v.x + v.y * v.y <= maxSqr) { cand = s; break; }
+            if (v.x * v.x + v.y * v.y <= maxSqr) { cand = s; break; }    // below the "stopped" speed → a rest candidate
         }
-        if (!cand) { this._candidate = null; this._dwell = 0; this._served = null; return; }   // tee free → re-arm
+        if (!cand) { this._candidate = null; this._dwell = 0; this._served = null; return; }   // none resting → re-arm
 
         if (cand.node !== this._candidate) { this._candidate = cand.node; this._dwell = 0; }    // a new stone settling
-        else this._dwell += dt;
+        else this._dwell += dt;                                                                 // same one, still stopped
 
         if (this._dwell >= this.restDelay && cand.node !== this._served) {
             this._served = cand.node;

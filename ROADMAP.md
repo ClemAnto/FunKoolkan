@@ -75,6 +75,7 @@
 - [x] **Traiettoria** — pallini piatti (ellisse ground-tilt) colorati per gemma, renderizzati **dietro** al launcher, coda allungata (3000 step, alpha floor 120)
 - [x] Debug OFF in scena (`debugStones=false`, `ArenaBounds.showDebugOutline=false`)
 - [x] Parametri calibrati e gotcha documentati in **MEMO.md → sezione FunKoolkan**
+- [x] **Strumenti di authoring (v0.2.1)** — `EditMode` (drag stone) + `EditPanel` (palette rune: drag→spawn su arena, **SAVE/LOAD** layout in localStorage) + **toggle DEBUG globale** (`DebugDraw`, persistito) + `Rune.gemType` impostabile da editor (enum `RuneKind`). Coordinamento EditMode↔EditPanel via modulo `EditState` (niente reference da cablare). Trigger curling rifinito: scatta **solo quando la stone si ferma** sul TEE (`CurlingScorer` `restSpeed=10`).
 
 ### Aperti (da chiudere per dichiarare la Fase 1 conclusa)
 

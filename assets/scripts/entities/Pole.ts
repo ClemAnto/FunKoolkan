@@ -1,5 +1,6 @@
 import { _decorator, Component, Node, Vec3, Mat4, CCFloat, Graphics, Color, RigidBody2D, ERigidBody2DType, CircleCollider2D } from 'cc';
 import { unprojectX, unprojectY, physicsDepth, projectX, projectY, sizeXFactor } from '../config/Perspective';
+import { DebugDraw } from '../config/DebugDraw';
 
 const { ccclass, property } = _decorator;
 
@@ -97,7 +98,7 @@ export class Pole extends Component {
     /** Debug: draw the solid circle projected onto the floor, above the stone-layer sprites. */
     private _drawDebug(): void {
         const arena = this.arena, world = arena?.parent;
-        if (!this.showDebugCircle || !arena?.isValid || !world?.isValid) {
+        if ((!this.showDebugCircle && !DebugDraw.enabled) || !arena?.isValid || !world?.isValid) {
             if (this._dbg?.isValid) this._dbg.clear();
             return;
         }

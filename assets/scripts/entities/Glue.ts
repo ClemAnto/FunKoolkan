@@ -3,6 +3,7 @@ import { Pole } from './Pole';
 import { Stone } from './Stone';
 import { StoneExplosion } from './StoneExplosion';
 import { projectX, projectY, sizeXFactor } from '../config/Perspective';
+import { DebugDraw } from '../config/DebugDraw';
 
 const { ccclass, property } = _decorator;
 
@@ -81,7 +82,7 @@ export class Glue extends Component {
 
     update(): void {
         if (!this._pole) this._updateBonds();   // poles are passive anchors; stones bond + are reeled in
-        if (Glue.debugAll) this._drawDebug(); else if (this._dbg?.isValid) this._dbg.clear();
+        if (Glue.debugAll || DebugDraw.enabled) this._drawDebug(); else if (this._dbg?.isValid) this._dbg.clear();
     }
 
     private _updateBonds(): void {

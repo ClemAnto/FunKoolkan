@@ -2,11 +2,13 @@ import { _decorator, Component, Node, Vec2, Vec3, UITransform, Sprite, Color, Bu
 import { Stone } from './Stone';
 import { StoneLauncher } from './StoneLauncher';
 import { unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
+import { EditState } from '../config/EditState';
 
 const { ccclass, property, disallowMultiple } = _decorator;
 
 const _tmp = new Vec3();
 const _zero = new Vec2(0, 0);
+const _hit = new Vec2();   // reused for the panel hit-test (no per-touch alloc)
 const GRAB_MARGIN = 8;   // extra ground px around a stone's radius that still grabs it (forgiving touch)
 const EDIT_ACTIVE_TINT = new Color(186, 214, 71, 255);   // EDIT button tint while active (the button's own pressed green)
 
@@ -28,6 +30,8 @@ export class EditMode extends Component {
     arena: Node | null = null;
     @property({ type: Node, tooltip: 'The HUD EDIT button node — tinted active while editing (bind its click to toggle()).' })
     editButton: Node | null = null;
+    // NOTE: the EditPanel is NOT referenced here — it shows/hides itself by reading EditState.editing (set
+    // below), so no fragile inspector wiring is needed between EditMode and the panel.
 
     private _editing = false;
     private _grabbed: Stone | null = null;
@@ -49,6 +53,7 @@ export class EditMode extends Component {
         // Bind the EDIT button's click here (no manual ClickEvent needed): assign editButton and it just works.
         if (this.editButton?.isValid) this.editButton.on(Button.EventType.CLICK, this.toggle, this);
         else console.warn('[EditMode] editButton not assigned — the EDIT button will not toggle edit mode');
+        EditState.editing = this._editing;   // publish the initial state (the EditPanel reads it to hide itself)
     }
     onDisable(): void {
         if (this.editButton?.isValid) this.editButton.off(Button.EventType.CLICK, this.toggle, this);
@@ -60,12 +65,14 @@ export class EditMode extends Component {
         input.off(Input.EventType.MOUSE_MOVE,   this._onMouseMove, this);
         input.off(Input.EventType.MOUSE_UP,     this._onMouseUp,   this);
         this._drop();
+        EditState.editing = false;   // mode component gone → leave edit state off (panel hides)
     }
 
     /** Toggle EDIT mode. Bind the HUD EDIT button's click event to this method. */
     toggle(): void {
         this._editing = !this._editing;
         this._setButtonActive(this._editing);
+        EditState.editing = this._editing;   // the EditPanel shows/hides itself off this flag
         if (!this._editing) this._drop();
         // NOTE: the launcher is NOT suspended by being in EDIT mode — launching stays available. It is
         // suspended only WHILE a stone is actually being dragged (see _grab/_drop), so a drag can't fire.
@@ -81,6 +88,13 @@ export class EditMode extends Component {
         sp.color = active ? EDIT_ACTIVE_TINT : this._btnColor;
     }
 
+    /** True if a UI point is over the visible EditPanel (it publishes its box to EditState) — such touches
+     *  belong to the palette drag, not to grabbing an arena stone. */
+    private _overEditPanel(uiX: number, uiY: number): boolean {
+        const r = EditState.panelRect;
+        return !!r && r.contains(_hit.set(uiX, uiY));
+    }
+
     // ── input (acts only while editing) ──
 
     private _onDown(e: EventTouch): void { const p = e.getUILocation(); this._grab(p.x, p.y); }
@@ -93,6 +107,7 @@ export class EditMode extends Component {
     /** Grab the nearest stone whose body circle contains the touch point (in ground space). */
     private _grab(uiX: number, uiY: number): void {
         if (!this._editing || this._grabbed) return;
+        if (this._overEditPanel(uiX, uiY)) return;   // touch started on the palette → EditPanel handles it (don't grab a stone)
         const g = this._toGround(uiX, uiY);
         if (!g) return;
         let best: Stone | null = null, bestD = Infinity;

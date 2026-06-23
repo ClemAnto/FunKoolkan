@@ -1,5 +1,6 @@
 import { _decorator, Component, Node, Vec2, Vec3, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate, Graphics, Color } from 'cc';
 import { projectX, projectY, sizeXFactor, sizeYFactor } from '../config/Perspective';
+import { DebugDraw } from '../config/DebugDraw';
 import { Rune } from './Rune';
 import { Glue } from './Glue';
 import { Bomb } from './Bomb';
@@ -56,7 +57,7 @@ export class Stone extends Component {
         view.setWorldScale(ws.x * s * sizeXFactor(p.y), ws.y * s * sizeYFactor(p.y), 1);
         // Mirror the physics body's spin onto the designated inner node (base stays upright).
         if (this.rotationNode?.isValid) this.rotationNode.angle = this._zAngleDeg();
-        if (Stone.debugDraw) this._drawDebug(p);
+        if (Stone.debugDraw || DebugDraw.enabled) this._drawDebug(p);
         else if (this._dbg?.isValid) this._dbg.clear();
     }
 

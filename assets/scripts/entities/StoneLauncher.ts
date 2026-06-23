@@ -4,6 +4,7 @@ import { Rune } from './Rune';
 import { ArenaBounds } from './ArenaBounds';
 import { RUNES } from '../config/RuneTypes';
 import { projectX, projectY, sizeXFactor, sizeYFactor, unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
+import { DebugDraw } from '../config/DebugDraw';
 
 const { ccclass, property } = _decorator;
 
@@ -204,6 +205,40 @@ export class StoneLauncher extends Component {
         this._loadPhase = 1; this._loadAnimT = 0; this._loadArmed = false;
     }
 
+    /** EDIT/authoring: create a stone of `gemType` AT REST at the UI point (uiX,uiY) IF it is over the arena,
+     *  reusing the launcher's stone config (radius/scale/physics/prefab/layer). Returns true if it spawned
+     *  (false if the point is outside the arena or the perspective isn't ready). Used by the EditPanel palette. */
+    trySpawnAtUI(uiX: number, uiY: number, gemType: number): boolean {
+        const arena = this.arena;
+        const ut = arena?.getComponent(UITransform);
+        if (!arena?.isValid || !ut || physicsDepth() <= 0) return false;
+        if (!ut.getBoundingBoxToWorld().contains(_hitPt.set(uiX, uiY))) return false;   // dropped outside the arena
+        _tmp.set(uiX, uiY, 0);
+        ut.convertToNodeSpaceAR(_tmp, _tmp);                              // UI → arena-local (visual)
+        return !!this.spawnRestingStone(unprojectX(_tmp.x, _tmp.y), unprojectY(_tmp.y), gemType);  // → flat ground
+    }
+
+    /** EDIT/authoring: create a stone of `gemType` AT REST at the given GROUND-space point (arena-local,
+     *  de-squashed — i.e. a Stone body's `node.position`), reusing the launcher's stone config. Returns the
+     *  body node (null if not ready). Used by the EditPanel palette drop and the arena save/load. */
+    spawnRestingStone(gx: number, gy: number, gemType: number): Node | null {
+        if (!this.arena?.isValid) return null;
+        return Stone.spawn({
+            arena: this.arena,
+            layer: this.stoneLayer,
+            viewPrefab: this.runePrefab,
+            pos: new Vec2(gx, gy),
+            velocity: new Vec2(0, 0),
+            radius: this.stoneRadius,
+            viewScale: this.stoneViewScale,
+            restitution: this.stoneRestitution,
+            friction: this.stoneFriction,
+            linearDamping: this.stoneDamping,
+            gemType,
+            name: 'EditStone',
+        });
+    }
+
     // ── loaded stone ──
 
     /** Instantiate the rune resting on the launcher (the stone about to fire) as the LAST child of
@@ -392,7 +427,7 @@ export class StoneLauncher extends Component {
      *  (amber, where launch power saturates) and the BOMB-ARMING arc just past it (red, maxDrag × bombDragFactor).
      *  Each on its OWN always-on Graphics (arena-local pull space) so they never fight the aim-preview dots. */
     private _drawDragArcs(): void {
-        if (!this.showLauncherBody || !this.arena?.isValid) {
+        if ((!this.showLauncherBody && !DebugDraw.enabled) || !this.arena?.isValid) {
             if (this._dragArc?.isValid) this._dragArc.clear();
             if (this._bombArc?.isValid) this._bombArc.clear();
             return;
@@ -484,7 +519,7 @@ export class StoneLauncher extends Component {
 
     /** Debug: draw the launcher's solid circle projected onto the floor (a flat ground disc). */
     private _drawBodyDebug(): void {
-        if (!this.showLauncherBody || !this.arena?.isValid) {
+        if ((!this.showLauncherBody && !DebugDraw.enabled) || !this.arena?.isValid) {
             if (this._bodyDbg?.isValid) this._bodyDbg.clear();
             return;
         }

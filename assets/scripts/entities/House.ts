@@ -1,5 +1,6 @@
 import { _decorator, Component, Node, Vec3, Mat4, UITransform, Graphics, Color } from 'cc';
 import { physicsDepth, projectX, projectY, sizeXFactor, sizeYFactor } from '../config/Perspective';
+import { DebugDraw } from '../config/DebugDraw';
 import { Stone } from './Stone';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
@@ -67,7 +68,7 @@ export class House extends Component {
      *  overlaps the TEE (the tee outline thickens). Same overlap test the scoring logic will use. Runs
      *  only while a debug view is on; clears the per-stone flag otherwise. */
     private _detect(): void {
-        const live = this.showDebug || Stone.debugDraw;
+        const live = this.showDebug || Stone.debugDraw || DebugDraw.enabled;
         let teeHit = false;
         const stones = Stone.all;
         for (let i = 0; i < stones.length; i++) {
@@ -140,7 +141,7 @@ export class House extends Component {
      *  correctly and it renders ABOVE the stone-layer sprites. */
     private _drawDebug(): void {
         const arena = this.node, world = arena.parent;
-        if (!this.showDebug || !world?.isValid) { if (this._dbg?.isValid) this._dbg.clear(); return; }
+        if ((!this.showDebug && !DebugDraw.enabled) || !world?.isValid) { if (this._dbg?.isValid) this._dbg.clear(); return; }
         if (!this._dbg?.isValid) {
             const dnode = new Node('HouseDebug');
             dnode.layer = arena.layer;
