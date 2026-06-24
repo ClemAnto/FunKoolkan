@@ -3,6 +3,7 @@ import { Stone } from './Stone';
 import { StoneLauncher } from './StoneLauncher';
 import { unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
 import { EditState } from '../config/EditState';
+import { SafeStorage } from '../utils/SafeStorage';
 
 const { ccclass, property, disallowMultiple } = _decorator;
 
@@ -11,6 +12,7 @@ const _zero = new Vec2(0, 0);
 const _hit = new Vec2();   // reused for the panel hit-test (no per-touch alloc)
 const GRAB_MARGIN = 8;   // extra ground px around a stone's radius that still grabs it (forgiving touch)
 const EDIT_ACTIVE_TINT = new Color(186, 214, 71, 255);   // EDIT button tint while active (the button's own pressed green)
+const EDIT_KEY = 'fk.editing';   // localStorage key for the EDIT-mode on/off flag (restored on scene start)
 
 /**
  * EDIT mode — a dev/authoring tool to reposition the stones already in the arena by dragging them.
@@ -42,6 +44,11 @@ export class EditMode extends Component {
     /** True while EDIT mode is active. */
     get editing(): boolean { return this._editing; }
 
+    onLoad(): void {
+        // Restore the EDIT flag from the last session: editing auto-activates on start if it was saved ON.
+        this._editing = SafeStorage.get(EDIT_KEY) === '1';
+    }
+
     onEnable(): void {
         input.on(Input.EventType.TOUCH_START,  this._onDown, this);
         input.on(Input.EventType.TOUCH_MOVE,   this._onMove, this);
@@ -53,7 +60,8 @@ export class EditMode extends Component {
         // Bind the EDIT button's click here (no manual ClickEvent needed): assign editButton and it just works.
         if (this.editButton?.isValid) this.editButton.on(Button.EventType.CLICK, this.toggle, this);
         else console.warn('[EditMode] editButton not assigned — the EDIT button will not toggle edit mode');
-        EditState.editing = this._editing;   // publish the initial state (the EditPanel reads it to hide itself)
+        EditState.editing = this._editing;     // publish the (possibly restored) state — EditPanel shows/hides off it
+        this._setButtonActive(this._editing);  // reflect the restored state on the EDIT button
     }
     onDisable(): void {
         if (this.editButton?.isValid) this.editButton.off(Button.EventType.CLICK, this.toggle, this);
@@ -74,6 +82,7 @@ export class EditMode extends Component {
         this._setButtonActive(this._editing);
         EditState.editing = this._editing;   // the EditPanel shows/hides itself off this flag
         if (!this._editing) this._drop();
+        SafeStorage.set(EDIT_KEY, this._editing ? '1' : '0');   // remember across reloads / sessions
         // NOTE: the launcher is NOT suspended by being in EDIT mode — launching stays available. It is
         // suspended only WHILE a stone is actually being dragged (see _grab/_drop), so a drag can't fire.
         console.log(`[EditMode] ${this._editing ? 'ON — drag stones (launcher still works)' : 'OFF'}`);

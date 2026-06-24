@@ -1,0 +1,23 @@
+{
+  "__type__": "cc.Material",
+  "_name": "SpriteFlash",
+  "_objFlags": 0,
+  "__editorExtras__": {},
+  "_native": "",
+  "_effectAsset": {
+    "__uuid__": "14e07451-e0b2-4758-bf73-9f36943010e3",
+    "__expectedType__": "cc.EffectAsset"
+  },
+  "_techIdx": 0,
+  "_defines": [
+    {
+      "USE_TEXTURE": true
+    }
+  ],
+  "_states": [
+    {}
+  ],
+  "_props": [
+    {}
+  ]
+}

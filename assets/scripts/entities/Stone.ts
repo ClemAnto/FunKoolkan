@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Vec2, Vec3, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate, Graphics, Color } from 'cc';
+import { _decorator, Component, Node, Vec2, Vec3, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate, Graphics, Color, Sprite, Material, tween, Tween } from 'cc';
 import { projectX, projectY, sizeXFactor, sizeYFactor } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
 import { Rune } from './Rune';
@@ -32,6 +32,23 @@ export class Stone extends Component {
     /** Debug: set by House when this stone overlaps the HOUSE zone → its debug outline thickens. */
     debugInHouse = false;
 
+    /** Transient SCREEN-space offset added to the view each frame — drives the non-physics "nudge" recoil
+     *  animation (the body never moves). Zero at rest; animated by nudge(). */
+    readonly viewOffset = new Vec3();
+    private _nudgeTween: Tween<Vec3> | null = null;
+    /** Hit flash: the view sprites' material INSTANCES (SpriteFlash effect) + a 0->1->0 flashAmount tween. The
+     *  shader does mix(rgb, flashColor, amount), so it whitens on any background (a tint/additive can't). */
+    private _flashMats: Material[] = [];
+    private _flashGathered = false;
+    private readonly _flashT = { v: 0 };
+    private readonly _flashColor = new Color(255, 255, 255, 0);   // .rgb = flash colour, .a = amount (driven by the tween)
+    private _flashTween: Tween<{ v: number }> | null = null;
+
+    /** Rubbery spring scale multiplier applied on TOP of the depth scale in lateUpdate — drives the
+     *  "swell then shrink to nothing" of vanishAsStar (1 at rest). Animated via a tween on `_spring`. */
+    private readonly _spring = { s: 1 };
+    private _vanishing = false;
+
     /** Debug overlay toggle (set by StoneLauncher.debugStones): a flat ellipse + rotation radius per stone. */
     static debugDraw = false;
     private _dbg: Graphics | null = null;
@@ -50,15 +67,94 @@ export class Stone extends Component {
         const p = this.node.position;                  // arena-local ground point (body is a direct child of arena)
         _v.set(projectX(p.x, p.y), projectY(p.y), p.z); // 1-point perspective: X converges, Y non-linear
         Vec3.transformMat4(_v, _v, arena.worldMatrix);  // arena-local → world
+        _v.x += this.viewOffset.x; _v.y += this.viewOffset.y;   // non-physics nudge (recoil animation)
         view.setWorldPosition(_v);
         // Shrink with depth in BOTH axes (sizeX = s, sizeY = s·vy), so a far rune is genuinely
         // smaller, the silhouette tracking the projected ground circle.
-        const ws = arena.worldScale, s = this.viewScale;
-        view.setWorldScale(ws.x * s * sizeXFactor(p.y), ws.y * s * sizeYFactor(p.y), 1);
+        const ws = arena.worldScale, s = this.viewScale, rs = this._spring.s;
+        view.setWorldScale(ws.x * s * sizeXFactor(p.y) * rs, ws.y * s * sizeYFactor(p.y) * rs, 1);
         // Mirror the physics body's spin onto the designated inner node (base stays upright).
         if (this.rotationNode?.isValid) this.rotationNode.angle = this._zAngleDeg();
         if (Stone.debugDraw || DebugDraw.enabled) this._drawDebug(p);
         else if (this._dbg?.isValid) this._dbg.clear();
+    }
+
+    /** Non-physics recoil: slide the VIEW `dist` px along (dirX,dirY) in screen space, then ease back to the
+     *  body. Pure animation — the Box2D body never moves (so it works even on a locked/static stone). Used by
+     *  the curling discharge: the source lurches back, the struck stone lurches forward along the bolt. */
+    nudge(dirX: number, dirY: number, dist: number, outT = 0.05, backT = 0.22): void {
+        if (dist <= 0) return;
+        this._nudgeTween?.stop();
+        this.viewOffset.set(0, 0, 0);
+        this._nudgeTween = tween(this.viewOffset)
+            .to(outT, { x: dirX * dist, y: dirY * dist }, { easing: 'quadOut' })
+            .to(backT, { x: 0, y: 0 }, { easing: 'quadOut' })
+            .start();
+    }
+
+    /** HIT FLASH: drive the SpriteFlash material's flashAmount 0->1->0 so the whole view washes to `color`
+     *  (white) then returns — the shader mix() whitens on ANY background, unlike a sprite-colour tint. Needs
+     *  the SpriteFlash material on the view sprites (assigned in the Rune prefab); a no-op on plain sprites. */
+    flashWhite(color: Color, peak = 1, outT = 0.05, backT = 0.2): void {
+        this._gatherFlashMats();
+        if (!this._flashMats.length) return;
+        this._flashColor.set(color.r, color.g, color.b, 0);   // .a (the amount) is driven by the tween below
+        this._flashTween?.stop();
+        this._flashT.v = 0;
+        const apply = (): void => this._setFlash(this._flashT.v);
+        this._flashTween = tween(this._flashT)
+            .to(outT, { v: peak }, { easing: 'quadOut', onUpdate: apply })   // peak = how white (1 = full white)
+            .to(backT, { v: 0 }, { easing: 'quadIn', onUpdate: apply })
+            .call(() => this._setFlash(0))
+            .start();
+    }
+
+    /** Material instances of the view sprites, gathered once — a per-sprite instance so this stone flashes
+     *  alone (at the cost of its batch; negligible for the few struck stones). */
+    private _gatherFlashMats(): void {
+        if (this._flashGathered) return;
+        this._flashGathered = true;
+        if (!this.viewNode?.isValid) return;
+        const sprites = this.viewNode.getComponentsInChildren(Sprite);
+        for (let i = 0; i < sprites.length; i++) {
+            const m = sprites[i].getMaterialInstance(0);
+            if (m) this._flashMats.push(m);
+        }
+    }
+
+    private _setFlash(v: number): void {
+        this._flashColor.a = Math.round(Math.max(0, Math.min(1, v)) * 255);   // amount packed into flashColor.a
+        for (let i = 0; i < this._flashMats.length; i++) this._flashMats[i].setProperty('flashColor', this._flashColor);
+    }
+
+    /** Clear any in-flight flash (used by vanishAsStar before the pop). */
+    private _restorePop(): void { this._setFlash(0); }
+
+    /** Curling payoff: the struck stone VANISHES with a pop, then the RaisingStar VFX takes over. After a
+     *  `delay` beat the view SWELLS (to `expand`×) and then SHRINKS to 0 — and the instant it hits 0 it fires
+     *  `onVanished` (where the star is born) and the whole stone (body + view) is destroyed. No rise: it pops
+     *  in place. Pure VIEW animation on top of the (already locked) body; one-shot. */
+    vanishAsStar(delay: number, expand: number, popTime: number, onVanished: () => void): void {
+        if (this._vanishing || !this.node?.isValid || !this.viewNode?.isValid) return;
+        this._vanishing = true;
+        // Drop any in-flight recoil NUDGE so the pop starts from rest — but KEEP the hit flash running, so the
+        // struck stone stays flashing white as it pops into a star (stopping it here is what hid B's flash).
+        this._nudgeTween?.stop(); this._nudgeTween = null;
+        this.viewOffset.set(0, 0, 0);
+        // After the beat: swell (a touch of overshoot = gommoso), then snap shut to nothing. When it reaches
+        // 0 the star is born where the stone stood and the stone (body + linked view) is removed.
+        const grow = popTime * 0.4, shrink = popTime * 0.6;
+        Tween.stopAllByTarget(this._spring);
+        this._spring.s = 1;
+        tween(this._spring)
+            .delay(delay)
+            .to(grow, { s: expand }, { easing: 'backOut' })
+            .to(shrink, { s: 0 }, { easing: 'backIn' })
+            .call(() => {
+                onVanished();
+                if (this.node?.isValid) this.node.destroy();
+            })
+            .start();
     }
 
     /** Full ±180 Z rotation of the body in degrees. Box2D is 2D → the body's rotation is a pure-Z
@@ -115,6 +211,12 @@ export class Stone extends Component {
     }
 
     onDestroy(): void {
+        this._nudgeTween?.stop();
+        this._nudgeTween = null;
+        this._flashTween?.stop();
+        this._flashTween = null;
+        Tween.stopAllByTarget(this._spring);      // vanishAsStar leftovers (target our own objects, not the node)
+        Tween.stopAllByTarget(this.viewOffset);
         if (this.viewNode?.isValid) this.viewNode.destroy();
         this.viewNode = null;
         if (this._dbg?.isValid) this._dbg.node.destroy();

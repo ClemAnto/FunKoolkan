@@ -71,7 +71,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "rune",
+    "_name": "rune-bottom",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": {
@@ -159,7 +159,10 @@
     "__prefab": {
       "__id__": 6
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -201,13 +204,11 @@
       "__id__": 0
     },
     "fileId": "f85tE2YPZPz5Ymdnqd1mp0",
-    "instance": null,
-    "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
   },
   {
     "__type__": "cc.Node",
-    "_name": "rune-001",
+    "_name": "rune-top",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": {
@@ -295,7 +296,10 @@
     "__prefab": {
       "__id__": 12
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -539,7 +543,10 @@
     "__prefab": {
       "__id__": 20
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -675,7 +682,10 @@
     "__prefab": {
       "__id__": 26
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -811,7 +821,10 @@
     "__prefab": {
       "__id__": 32
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -993,6 +1006,7 @@
         "__id__": 28
       }
     ],
+    "_gemType": 0,
     "_id": ""
   },
   {

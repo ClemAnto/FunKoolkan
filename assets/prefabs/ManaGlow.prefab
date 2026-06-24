@@ -1,7 +1,7 @@
 [
   {
     "__type__": "cc.Prefab",
-    "_name": "BoltSegment",
+    "_name": "ManaGlow",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_native": "",
@@ -13,7 +13,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "BoltSegment",
+    "_name": "ManaGlow",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": null,
@@ -25,10 +25,13 @@
       },
       {
         "__id__": 4
+      },
+      {
+        "__id__": 6
       }
     ],
     "_prefab": {
-      "__id__": 6
+      "__id__": 8
     },
     "_lpos": {
       "__type__": "cc.Vec3",
@@ -73,8 +76,8 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 256,
-      "height": 64
+      "width": 128,
+      "height": 128
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -85,7 +88,7 @@
   },
   {
     "__type__": "cc.CompPrefabInfo",
-    "fileId": "f38P3znKNNR4QNnlaTnBZi"
+    "fileId": "a2ManaGlowUITrans01bQ"
   },
   {
     "__type__": "cc.Sprite",
@@ -110,7 +113,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "e85d53f3-febf-4210-87b4-39adf30aa585@f9941",
+      "__uuid__": "edbf98bd-f2a9-40ad-8c39-b1f076c7616b@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
@@ -130,7 +133,26 @@
   },
   {
     "__type__": "cc.CompPrefabInfo",
-    "fileId": "c5iFENlxZHJa0EsLDxPKJP"
+    "fileId": "b3ManaGlowSprite02cW"
+  },
+  {
+    "__type__": "cc.UIOpacity",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 1
+    },
+    "_enabled": true,
+    "__prefab": {
+      "__id__": 7
+    },
+    "_opacity": 255,
+    "_id": ""
+  },
+  {
+    "__type__": "cc.CompPrefabInfo",
+    "fileId": "c4ManaGlowUIOpac03dE"
   },
   {
     "__type__": "cc.PrefabInfo",
@@ -140,7 +162,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "c46/YsCPVOJYA4mWEpNYRx",
+    "fileId": "d5ManaGlowRoot04eZx",
     "instance": null,
     "targetOverrides": null
   }
