@@ -1231,7 +1231,7 @@
     "background": {
       "__id__": 7
     },
-    "maxCount": 0,
+    "maxCount": 20,
     "spawnInterval": 5,
     "autoStart": true,
     "dustLifetime": 1.4,
@@ -4046,7 +4046,10 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -4155,7 +4158,10 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -4867,7 +4873,7 @@
   {
     "__type__": "cc.Node",
     "_name": "UILayer",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 2
@@ -4925,7 +4931,7 @@
   {
     "__type__": "cc.Node",
     "_name": "HUD",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 136
@@ -5001,7 +5007,7 @@
   {
     "__type__": "cc.Node",
     "_name": "ScoreSec",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 137
@@ -5059,7 +5065,7 @@
   {
     "__type__": "cc.Node",
     "_name": "flag_red",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 138
@@ -5168,7 +5174,7 @@
   {
     "__type__": "cc.Node",
     "_name": "ScoreCaption",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 138
@@ -5303,7 +5309,7 @@
   {
     "__type__": "cc.Node",
     "_name": "ScoreValue",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 138
@@ -5490,7 +5496,7 @@
   {
     "__type__": "cc.Node",
     "_name": "RoundSec",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 137
@@ -5551,7 +5557,7 @@
   {
     "__type__": "cc.Node",
     "_name": "flag_red",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 150
@@ -5660,7 +5666,7 @@
   {
     "__type__": "cc.Node",
     "_name": "RoundCaption",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 150
@@ -5795,7 +5801,7 @@
   {
     "__type__": "cc.Node",
     "_name": "RoundValue",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 150
@@ -5930,7 +5936,7 @@
   {
     "__type__": "cc.Node",
     "_name": "ProgressBar",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 150
@@ -5985,7 +5991,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Bar",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 160
@@ -6226,7 +6232,7 @@
   {
     "__type__": "cc.Node",
     "_name": "VersionSec",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 137
@@ -6278,7 +6284,7 @@
   {
     "__type__": "cc.Node",
     "_name": "VersionValue",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 169
@@ -6462,7 +6468,7 @@
   {
     "__type__": "cc.Node",
     "_name": "MenuButton",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 137
@@ -6657,7 +6663,7 @@
   {
     "__type__": "cc.Node",
     "_name": "EditButton",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 137
@@ -7002,7 +7008,7 @@
   {
     "__type__": "cc.Node",
     "_name": "DebugButton",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 137
@@ -7347,7 +7353,7 @@
   {
     "__type__": "cc.Node",
     "_name": "EditPanel",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 137
@@ -7411,7 +7417,7 @@
   {
     "__type__": "cc.Node",
     "_name": "LoadButton",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 196
@@ -7756,7 +7762,7 @@
   {
     "__type__": "cc.Node",
     "_name": "SaveButton",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 196
@@ -8101,7 +8107,7 @@
   {
     "__type__": "cc.Node",
     "_name": "RuneList",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 196
@@ -8167,7 +8173,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "_parent": {
       "__id__": 213
     },
@@ -8338,7 +8344,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "_parent": {
       "__id__": 213
     },
@@ -8509,7 +8515,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "_parent": {
       "__id__": 213
     },
@@ -8680,7 +8686,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "_parent": {
       "__id__": 213
     },
@@ -8851,7 +8857,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "_parent": {
       "__id__": 213
     },
@@ -9022,7 +9028,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "_parent": {
       "__id__": 213
     },
@@ -9441,7 +9447,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Dialog",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 136
@@ -9499,7 +9505,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Background",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 302
@@ -9641,7 +9647,7 @@
   {
     "__type__": "cc.Node",
     "_name": "wood",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 302
@@ -9693,7 +9699,7 @@
   {
     "__type__": "cc.Node",
     "_name": "CloseButton",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 307
@@ -9751,7 +9757,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Label",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 308
@@ -10090,7 +10096,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Layout",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 302
@@ -10154,7 +10160,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Vibrations",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 318
@@ -10212,7 +10218,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Checkmark",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 319
@@ -10321,7 +10327,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Label",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 319
@@ -10574,7 +10580,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Sfx",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 318
@@ -10632,7 +10638,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Checkmark",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 329
@@ -10741,7 +10747,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Label",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 329
@@ -10994,7 +11000,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Music",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 318
@@ -11052,7 +11058,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Checkmark",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 339
@@ -11161,7 +11167,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Label",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 339
@@ -11414,7 +11420,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Fullscreen",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 318
@@ -11472,7 +11478,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Checkmark",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 349
@@ -11581,7 +11587,7 @@
   {
     "__type__": "cc.Node",
     "_name": "Label",
-    "_objFlags": 0,
+    "_objFlags": 512,
     "__editorExtras__": {},
     "_parent": {
       "__id__": 349

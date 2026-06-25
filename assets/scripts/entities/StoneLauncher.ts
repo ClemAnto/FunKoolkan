@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Vec2, Vec3, UITransform, UIOpacity, Sprite, gfx, input, Input, EventTouch, EventMouse, CCFloat, Prefab, Graphics, Color, instantiate, tween, Tween, RigidBody2D, ERigidBody2DType, CircleCollider2D } from 'cc';
+import { _decorator, Component, Node, Vec2, Vec3, Vec4, UITransform, UIOpacity, Sprite, Material, gfx, input, Input, EventTouch, EventMouse, CCFloat, Prefab, Graphics, Color, instantiate, tween, Tween, RigidBody2D, ERigidBody2DType, CircleCollider2D } from 'cc';
 import { Stone } from './Stone';
 import { Rune } from './Rune';
 import { ArenaBounds } from './ArenaBounds';
@@ -21,8 +21,7 @@ const SIM_RECORD_DIST = 18;
 // wall bounce, so the guide stays an honest direction predictor; only its length is pinned here.
 const PREVIEW_SPEED = 200;     // reference full-power launch speed for the guide
 const PREVIEW_DAMPING = 0.5;   // reference stone damping for the guide
-const BOMB_PULSE_AMP = 0.15;   // loaded stone scale oscillation (±) while charged to a bomb
-const BOMB_PULSE_FREQ = 12;    // bomb pulse speed (rad/s)
+const BOMB_SHAKE_PX = 2.5;     // loaded stone's unstable vibration amplitude (screen px) while charged to a bomb (about to explode)
 const AIM_EASE = 16;           // per-second ease rate for the bow arm + trajectory toward their targets (smooth both ways: invalid↔valid)
 const GAUGE_EASE = 14;         // per-second ease rate for the power gauge draining back to empty after release
 const MANA_SPIN = 45;          // deg/s perpetual rotation of the mana node
@@ -39,7 +38,12 @@ const LAUNCH_FLASH = 0.5;      // white amount (0..1) the launch flash reaches
 const LAUNCH_DROP_PX = 10;     // loaded stone drops this many px (screen) as it departs the launcher
 const LAUNCH_DROP_TIME = 0.1;  // duration of the loaded stone's drop + whiten on fire (reload waits this long)
 const FIRED_FLASH_TIME = 0.15; // fired stone fades from half white back to normal over this
-const BOMB_TINT = new Color(255, 70, 70, 255);   // red tint on the loaded stone while charged to a bomb
+const BOMB_FLASH_COLOR = new Color(255, 40, 40, 255);   // red the bomb-charge flash washes the stone toward (loaded + fired)
+const BOMB_FLASH_BASE = 0.30;  // midpoint flash amount of the throbbing bomb-charge red (0..1)
+const BOMB_FLASH_AMP = 0.18;   // ± amplitude of the red throb
+const BOMB_FLASH_FREQ = 10;    // rad/s of the red throb
+const GAUGE_HUE_BASE = 1.7;   // steady HUE rotation (rad) on the gauge while bomb-charged — tuned for red/purple (no throb)
+const GAUGE_HUE_EASE = 7;     // per-second ease rate of the gauge hue ramping in/out (gradual activation)
 const ARC_MAXDRAG = new Color(255, 210, 70, 230);   // debug arc: full-power drag distance (amber)
 const ARC_BOMB = new Color(255, 80, 80, 230);       // debug arc: bomb-arming drag distance (red)
 const _tmp = new Vec3();
@@ -161,6 +165,10 @@ export class StoneLauncher extends Component {
     private _trajTargetAlpha = 1;       // its target (1 = valid pose, 0 = invalid) → smooth fade in/out
     private _pulseT = 0;                // time accumulator for the bomb-charge pulse on the loaded stone
     private _gauge = 0;                 // power shown on the gauge; follows power while aiming, eases to 0 after release
+    private _gaugeFlashMats: Material[] = [];   // SpriteFlash material instances on the gauge halves (lazy, for the bomb hue shift)
+    private _gaugeFlashGathered = false;
+    private readonly _gaugeFx = new Vec4(0, 0, 0, 0);   // fxParams: .x = hue rotation (radians) on the gauge
+    private _gaugeHueEnv = 0;           // eased 0..1 envelope ramping the gauge hue in/out (gradual on bomb arm/disarm)
     private _manaBase = 0;              // perpetual spin accumulator for the mana node
     private _manaWobT = -1;             // time within the current wobble (-1 = idle, no wobble running)
     private _manaNextWob = MANA_WOBBLE_MIN;   // seconds left until the next wobble kicks in
@@ -303,9 +311,14 @@ export class StoneLauncher extends Component {
         const gy = unprojectY(lp.y);              // launcher depth in ground space
         const base = this.stoneViewScale * this.loadedScaleFactor;   // a bit smaller than the launched stone
         const pop = this._loadMult();   // baked here: the per-frame setScale would override a tween
-        const pulse = this._bombCharged ? 1 + BOMB_PULSE_AMP * Math.sin(this._pulseT * BOMB_PULSE_FREQ) : 1;   // explosive throb
-        r.node.setPosition(lp.x, lp.y + this._dropT.y, 0);   // _dropT.y = transient launch-departure drop
-        r.node.setScale(base * sizeXFactor(gy) * pop * pulse, base * sizeYFactor(gy) * pop * pulse, 1);
+        // While charged to a bomb the stone VIBRATES unstably (random per-frame jitter — like it's about to blow).
+        let jx = 0, jy = 0;
+        if (this._bombCharged) {
+            jx = (Math.random() - 0.5) * 2 * BOMB_SHAKE_PX;
+            jy = (Math.random() - 0.5) * 2 * BOMB_SHAKE_PX;
+        }
+        r.node.setPosition(lp.x + jx, lp.y + this._dropT.y + jy, 0);   // _dropT.y = transient launch-departure drop
+        r.node.setScale(base * sizeXFactor(gy) * pop, base * sizeYFactor(gy) * pop, 1);
     }
 
     /** Loaded scale multiplier for the current phase: 1 settled, linear 1→0 pop-out, eased 0→1 pop-in. */
@@ -353,7 +366,21 @@ export class StoneLauncher extends Component {
         if (this._bombCharged !== this._wasBombCharged) {   // entered/left the bomb-charge zone → update the cue
             this._wasBombCharged = this._bombCharged;
             if (this.bombIndicator?.isValid) this.bombIndicator.active = this._bombCharged;
-            this._loadedRune?.setTint(this._bombCharged ? BOMB_TINT : Color.WHITE);   // red while armed, clear otherwise
+            // Left the zone WITHOUT firing → drop the red (a launch keeps it: the departure flashTo / fired bomb owns it).
+            if (!this._bombCharged && !this._launching) this._loadedRune?.clearFlash();
+        }
+        if (this._bombCharged) {   // armed: loaded stone throbs red
+            const amt = BOMB_FLASH_BASE + BOMB_FLASH_AMP * Math.sin(this._pulseT * BOMB_FLASH_FREQ);
+            this._loadedRune?.setFlash(BOMB_FLASH_COLOR, amt);
+        }
+        // Gauge HUE: ease an envelope in/out so activation/deactivation is GRADUAL (not a snap). No throb — the
+        // hue holds steady at GAUGE_HUE_BASE while armed (it does NOT pulse).
+        const hueTarget = this._bombCharged ? 1 : 0;
+        this._gaugeHueEnv += (hueTarget - this._gaugeHueEnv) * Math.min(1, dt * GAUGE_HUE_EASE);
+        if (this._gaugeHueEnv > 0.001) {
+            this._setGaugeHue(this._gaugeHueEnv * GAUGE_HUE_BASE);   // envelope ramps the rotation in/out smoothly
+        } else if (this._gaugeHueEnv !== 0) {
+            this._gaugeHueEnv = 0; this._setGaugeHue(0);    // settle exactly at the base hue
         }
         this._updateLoadedPop(dt);
         this._positionLoadedStone();   // keep the resting stone glued to the launcher (survives resize)
@@ -446,7 +473,9 @@ export class StoneLauncher extends Component {
             isBomb,
             name: isBomb ? 'BombStone' : 'LaunchedStone',
         });
-        fired.getComponent(Stone)?.flashFrom(LAUNCH_WHITE, LAUNCH_FLASH, FIRED_FLASH_TIME);   // starts half white, fades to normal
+        const firedStone = fired.getComponent(Stone);
+        if (isBomb) firedStone?.flashPulse(BOMB_FLASH_COLOR, BOMB_FLASH_BASE, BOMB_FLASH_AMP, BOMB_FLASH_FREQ);   // a bomb KEEPS a throbbing red
+        else firedStone?.flashFrom(LAUNCH_WHITE, LAUNCH_FLASH, FIRED_FLASH_TIME);   // normal shot: half white, fades to normal
 
         // Loaded stone DEPARTS: drop a few px + wash to half white over LAUNCH_DROP_TIME, THEN reload (the
         // coordinator's armReload collapses it to 0). Delaying the reload keeps the departure visible.
@@ -471,6 +500,30 @@ export class StoneLauncher extends Component {
         const t = 1 - Math.max(0, Math.min(1, power));   // 1 at empty, 0 at full
         if (this.gaugeLeft)  this.gaugeLeft.angle  =  180 * t;
         if (this.gaugeRight) this.gaugeRight.angle = -180 * t;
+    }
+
+    /** Gauge-half sprite material instances (SpriteFlash), gathered once — the gauge sprites already carry the
+     *  SpriteFlash material in the scene (same as the Rune gems); a no-op otherwise. */
+    private _gatherGaugeFlashMats(): void {
+        if (this._gaugeFlashGathered) return;
+        this._gaugeFlashGathered = true;
+        for (const half of [this.gaugeLeft, this.gaugeRight]) {
+            if (!half?.isValid) continue;
+            const sprites = half.getComponentsInChildren(Sprite);
+            for (let i = 0; i < sprites.length; i++) {
+                const m = sprites[i].getMaterialInstance(0);
+                if (m) this._gaugeFlashMats.push(m);
+            }
+        }
+    }
+
+    /** Rotate the gauge's HUE by `radians` (0 = restore) via the SpriteFlash fxParams — keeps its shading, only
+     *  spins the colour (red/purple while bomb-charged). */
+    private _setGaugeHue(radians: number): void {
+        this._gatherGaugeFlashMats();
+        if (!this._gaugeFlashMats.length) return;
+        this._gaugeFx.x = radians;
+        for (let i = 0; i < this._gaugeFlashMats.length; i++) this._gaugeFlashMats[i].setProperty('fxParams', this._gaugeFx);
     }
 
     /** Recompute aim + trajectory from the CURRENT touch, relative to the launcher. */

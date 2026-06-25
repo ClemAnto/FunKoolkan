@@ -1,6 +1,6 @@
 {
   "__type__": "cc.Material",
-  "_name": "SpriteFlash",
+  "_name": "",
   "_objFlags": 0,
   "__editorExtras__": {},
   "_native": "",
@@ -15,7 +15,22 @@
     }
   ],
   "_states": [
-    {}
+    {
+      "rasterizerState": {},
+      "depthStencilState": {},
+      "blendState": {
+        "blendColor": {
+          "__type__": "cc.Color",
+          "r": 148,
+          "g": 158,
+          "b": 173,
+          "a": 255
+        },
+        "targets": [
+          {}
+        ]
+      }
+    }
   ],
   "_props": [
     {}

@@ -77,6 +77,17 @@ export class Rune extends Component {
         this._flashTween = tween(this._flashT).to(time, { v: amount }, { easing: 'quadOut', onUpdate: apply }).start();
     }
 
+    /** Directly drive the flash amount NOW (no tween) — for a per-frame pulsing wash, e.g. the throbbing
+     *  red on the loaded stone while the shot is charged to a bomb. Cancels any running flash tween. */
+    setFlash(color: Color, amount: number): void {
+        this._gatherFlashMats();
+        if (!this._flashMats.length) return;
+        if (this._flashTween) { this._flashTween.stop(); this._flashTween = null; }
+        this._flashColor.set(color.r, color.g, color.b, 0);
+        this._flashT.v = amount;
+        this._setFlash(amount);
+    }
+
     /** Cancel any flash and restore the rune to normal (called when a fresh stone pops onto the launcher). */
     clearFlash(): void {
         this._flashTween?.stop(); this._flashTween = null;

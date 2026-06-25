@@ -4,7 +4,7 @@ import { StoneExplosion } from '../entities/StoneExplosion';
 const { ccclass } = _decorator;
 
 /** Game version — keep aligned with package.json (see CLAUDE.md §Versioning). */
-export const VERSION = '0.2.6';
+export const VERSION = '0.2.7';
 
 /**
  * FunKoolkan game manager — PLACEHOLDER (intentionally near-empty).

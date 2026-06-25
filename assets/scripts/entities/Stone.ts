@@ -43,6 +43,13 @@ export class Stone extends Component {
     private readonly _flashT = { v: 0 };
     private readonly _flashColor = new Color(255, 255, 255, 0);   // .rgb = flash colour, .a = amount (driven by the tween)
     private _flashTween: Tween<{ v: number }> | null = null;
+    /** Continuous pulsing flash (a fired BOMB keeps a throbbing red until it explodes): when set, update()
+     *  drives the flash amount to base±amp at freq rad/s every frame. Null = no pulse. */
+    private _pulseColor: Color | null = null;
+    private _pulseBase = 0;
+    private _pulseAmp = 0;
+    private _pulseFreq = 0;
+    private _pulseT = 0;
 
     /** Rubbery spring scale multiplier applied on TOP of the depth scale in lateUpdate — drives the
      *  "swell then shrink to nothing" of vanishAsStar (1 at rest). Animated via a tween on `_spring`. */
@@ -123,6 +130,24 @@ export class Stone extends Component {
             .to(time, { v: 0 }, { easing: 'quadIn', onUpdate: apply })
             .call(() => this._setFlash(0))
             .start();
+    }
+
+    /** Keep the view pulsing toward `color` (flash amount oscillating base±amp at `freq` rad/s) EVERY frame
+     *  via update() — used by a fired BOMB so it carries a throbbing red for its whole life. Cleared on
+     *  destroy. */
+    flashPulse(color: Color, base: number, amp: number, freq: number): void {
+        this._gatherFlashMats();
+        if (!this._flashMats.length) return;
+        this._flashTween?.stop(); this._flashTween = null;   // the pulse takes over from any one-shot flash
+        this._flashColor.set(color.r, color.g, color.b, 0);
+        this._pulseColor = color;
+        this._pulseBase = base; this._pulseAmp = amp; this._pulseFreq = freq; this._pulseT = 0;
+    }
+
+    update(dt: number): void {
+        if (!this._pulseColor) return;   // only a bomb stone runs a continuous pulse
+        this._pulseT += dt;
+        this._setFlash(this._pulseBase + this._pulseAmp * Math.sin(this._pulseT * this._pulseFreq));
     }
 
     /** Material instances of the view sprites, gathered once — a per-sprite instance so this stone flashes

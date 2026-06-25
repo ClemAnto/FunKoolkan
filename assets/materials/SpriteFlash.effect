@@ -21,6 +21,7 @@ CCEffect %{
       properties:
         alphaThreshold: { value: 0.5 }
         flashColor: { value: [1, 1, 1, 0], editor: { type: color } }   # .rgb = flash colour, .a = amount (0 = off)
+        fxParams: { value: [0, 0, 0, 0] }   # .x = hue rotation (radians, 0 = off); rest reserved
 }%
 
 CCProgram sprite-vs %{
@@ -79,7 +80,16 @@ CCProgram sprite-fs %{
 
   uniform FlashConstant {
     vec4 flashColor;   // .rgb = flash colour, .a = amount — packed in ONE vec4 to dodge std140 lone-float misalign
+    vec4 fxParams;     // .x = hue rotation (radians); rest reserved — vec4 (not a lone float) for the same reason
   };
+
+  // Rotate a colour's HUE by `a` radians: a Rodrigues rotation about the grey axis (1,1,1), which leaves
+  // luminance/saturation roughly intact (shading kept) and only spins the hue — unlike a mix toward a flat colour.
+  vec3 hueRotate (vec3 c, float a) {
+    const vec3 k = vec3(0.57735026919);   // normalize(vec3(1)) = the grey/neutral axis
+    float cs = cos(a);
+    return c * cs + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cs);
+  }
 
   vec4 frag () {
     vec4 o = vec4(1, 1, 1, 1);
@@ -94,6 +104,7 @@ CCProgram sprite-fs %{
 
     o *= color;
     ALPHA_TEST(o);
+    if (fxParams.x != 0.0) o.rgb = clamp(hueRotate(o.rgb, fxParams.x), 0.0, 1.0);   // hue shift (keeps shading)
     o.rgb = mix(o.rgb, flashColor.rgb, clamp(flashColor.a, 0.0, 1.0));   // hit flash (amount in .a), alpha untouched
     return o;
   }
