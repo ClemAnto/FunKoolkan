@@ -1,6 +1,7 @@
 import { _decorator, Component, Node, Vec3, Mat4, Sprite, UIOpacity, ParticleSystem2D, Prefab, instantiate, gfx, Color, tween } from 'cc';
 import { Stone } from './Stone';
 import { Koolkan } from './Koolkan';
+import { AkuAku } from './AkuAku';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
 
@@ -26,9 +27,11 @@ interface Star {
     trail: ParticleSystem2D | null;
     p0: Vec3;                   // birth point in FX-local space
     side: number;               // ±1: which way the flight path bows
-    ox: number; oy: number;     // random offset (px) added to Koolkan's head so repeated hits scatter
+    ox: number; oy: number;     // random offset (px) added to the target so repeated hits scatter
     baseScale: number;          // sparkleSize / SPARKLE_NATIVE
     age: number;
+    targetAku: AkuAku | null;   // the claimed Aku-aku this star homes onto (null → it flies at Koolkan)
+    claimTok: number;           // the claim token (invalidated if that Aku dies/recycles → falls back to Koolkan)
 }
 
 /**
@@ -160,8 +163,26 @@ export class RaisingStar extends Component {
         if (trail) { trail.srcBlendFactor = gfx.BlendFactor.SRC_ALPHA; trail.dstBlendFactor = gfx.BlendFactor.ONE; }   // additive sparks
 
         const spread = this.hitSpread;
+        // Target the NEAREST unclaimed Aku-aku (so no two stars share one); none free → it flies at Koolkan.
+        const claim = this._claimNearestAku(fromWorld);
         this._stars.push({ root, op, star, trail, p0, side: Math.random() < 0.5 ? -1 : 1,
-            ox: (Math.random() * 2 - 1) * spread, oy: (Math.random() * 2 - 1) * spread, baseScale, age: 0 });
+            ox: (Math.random() * 2 - 1) * spread, oy: (Math.random() * 2 - 1) * spread, baseScale, age: 0,
+            targetAku: claim?.aku ?? null, claimTok: claim?.tok ?? 0 });
+    }
+
+    /** Claim the nearest unclaimed, live Aku-aku to `fromWorld` so this star homes onto it and no other star
+     *  picks the same one. Returns null when there are no free Aku-aku (the star then targets Koolkan). */
+    private _claimNearestAku(fromWorld: Readonly<Vec3>): { aku: AkuAku; tok: number } | null {
+        const all = AkuAku.all;
+        let best: AkuAku | null = null, bestD = Infinity;
+        for (let i = 0; i < all.length; i++) {
+            const a = all[i];
+            if (!a?.node?.isValid || !a.claimable) continue;
+            const wp = a.node.worldPosition;
+            const dx = wp.x - fromWorld.x, dy = wp.y - fromWorld.y, d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; best = a; }
+        }
+        return best ? { aku: best, tok: best.claim() } : null;
     }
 
     update(dt: number): void {
@@ -192,9 +213,9 @@ export class RaisingStar extends Component {
                 continue;
             }
 
-            // ── FLIGHT: accelerate along a bowed quadratic bezier into Koolkan's head. ──
+            // ── FLIGHT: accelerate along a bowed quadratic bezier into the target (claimed Aku-aku, else Koolkan). ──
             const ft = (s.age - birth - hold) / fly;
-            if (ft >= 1 || !this._headLocal(_wp)) { this._impact(s); this._stars.splice(i, 1); continue; }
+            if (ft >= 1 || !this._targetLocal(s, _wp)) { this._impact(s); this._stars.splice(i, 1); continue; }
             const u = ft * ft;                                  // eased-in → the star accelerates and slams home
             const p1x = _wp.x + s.ox, p1y = _wp.y + s.oy;   // scatter the landing point around the head
             const mx = (s.p0.x + p1x) / 2, my = (s.p0.y + p1y) / 2;
@@ -208,25 +229,35 @@ export class RaisingStar extends Component {
         }
     }
 
-    /** Impact on Koolkan's face: a small explosion (flash + sparks), then the sparkle dies — its star sprite
-     *  hidden at once but the node kept alive briefly (trail stopped) so the trailing sparks finish. */
+    /** Impact: a flash where the star lands, then the sparkle dies (trail lingers). If it hit a claimed Aku-aku,
+     *  that Aku plays its electrified-explode death (it spawns its own spark burst); otherwise it's Koolkan —
+     *  a spark burst on his face + a recoil. */
     private _impact(s: Star): void {
-        const onHead = this._headLocal(_wp);
-        const hx = (onHead ? _wp.x : s.p0.x) + s.ox, hy = (onHead ? _wp.y : s.p0.y) + s.oy;   // same scattered point
-        this._flash(hx, hy, this.explosionScale);
-        this._burst(this.explosionSparkPrefab, hx, hy);
-        this._koolkan()?.hit();                                // knock Koolkan slightly back on impact
+        const onTarget = this._targetLocal(s, _wp);
+        const hx = (onTarget ? _wp.x : s.p0.x) + s.ox, hy = (onTarget ? _wp.y : s.p0.y) + s.oy;   // same scattered point
+        const aku = (s.targetAku && s.targetAku.claimValid(s.claimTok)) ? s.targetAku : null;
+        this._flash(hx, hy, this.explosionScale);              // a flash at the moment of impact either way
+        if (aku) {
+            aku.electrifyAndExplode();                         // leap + white/cyan electrified pulse + spark burst (its own)
+        } else {
+            this._burst(this.explosionSparkPrefab, hx, hy);    // Koolkan: spark burst on his face...
+            this._koolkan()?.hit();                            // ...and knock him slightly back
+        }
         if (s.star?.isValid) s.star.active = false;            // the star is "consumed"; keep root lit for the trail
         if (s.trail?.isValid) s.trail.stopSystem();            // stop emitting; live sparks finish in place (FREE)
         this.scheduleOnce(() => { if (s.root?.isValid) s.root.destroy(); }, TRAIL_LINGER);
     }
 
-    /** Koolkan's head in this node's LOCAL space (where the star path lives). Returns false if unassigned. */
-    private _headLocal(out: Vec3): boolean {
-        if (!this.koolkanHead?.isValid) return false;
+    /** The star's TARGET in this node's LOCAL space (where the path lives): the claimed Aku-aku if still valid,
+     *  else Koolkan's head. Re-read each frame so the star homes onto a moving target. False if neither exists. */
+    private _targetLocal(s: Star, out: Vec3): boolean {
         Mat4.invert(_inv, this.node.worldMatrix);
-        Vec3.transformMat4(out, this.koolkanHead.worldPosition, _inv);
-        return true;
+        if (s.targetAku && s.targetAku.claimValid(s.claimTok) && s.targetAku.node?.isValid) {
+            Vec3.transformMat4(out, s.targetAku.node.worldPosition, _inv);
+            return true;
+        }
+        if (this.koolkanHead?.isValid) { Vec3.transformMat4(out, this.koolkanHead.worldPosition, _inv); return true; }
+        return false;
     }
 
     /** The Koolkan boss, resolved (once) from `koolkanHead` — whether the head IS his node or a child of it
@@ -288,7 +319,11 @@ export class RaisingStar extends Component {
     }
 
     onDestroy(): void {
-        for (let i = 0; i < this._stars.length; i++) { const r = this._stars[i].root; if (r?.isValid) r.destroy(); }
+        for (let i = 0; i < this._stars.length; i++) {
+            const s = this._stars[i];
+            if (s.targetAku?.isValid) s.targetAku.releaseClaim(s.claimTok);   // free its reserved Aku-aku
+            if (s.root?.isValid) s.root.destroy();
+        }
         this._stars.length = 0;
     }
 }
