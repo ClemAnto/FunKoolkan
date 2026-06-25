@@ -109,6 +109,22 @@ export class Stone extends Component {
             .start();
     }
 
+    /** One-way flash: snap the SpriteFlash amount to `amount` (e.g. 0.5 = half white) NOW, then fade it back
+     *  to normal over `time`. Used on a freshly launched stone so it leaves the launcher washed white. */
+    flashFrom(color: Color, amount = 0.5, time = 0.3): void {
+        this._gatherFlashMats();
+        if (!this._flashMats.length) return;
+        this._flashColor.set(color.r, color.g, color.b, 0);   // .a (the amount) is driven below
+        this._flashTween?.stop();
+        this._flashT.v = amount;
+        const apply = (): void => this._setFlash(this._flashT.v);
+        apply();
+        this._flashTween = tween(this._flashT)
+            .to(time, { v: 0 }, { easing: 'quadIn', onUpdate: apply })
+            .call(() => this._setFlash(0))
+            .start();
+    }
+
     /** Material instances of the view sprites, gathered once — a per-sprite instance so this stone flashes
      *  alone (at the cost of its batch; negligible for the few struck stones). */
     private _gatherFlashMats(): void {

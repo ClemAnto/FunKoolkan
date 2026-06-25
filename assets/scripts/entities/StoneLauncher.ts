@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Vec2, Vec3, UITransform, input, Input, EventTouch, EventMouse, CCFloat, Prefab, Graphics, Color, instantiate, RigidBody2D, ERigidBody2DType, CircleCollider2D } from 'cc';
+import { _decorator, Component, Node, Vec2, Vec3, UITransform, UIOpacity, Sprite, gfx, input, Input, EventTouch, EventMouse, CCFloat, Prefab, Graphics, Color, instantiate, tween, Tween, RigidBody2D, ERigidBody2DType, CircleCollider2D } from 'cc';
 import { Stone } from './Stone';
 import { Rune } from './Rune';
 import { ArenaBounds } from './ArenaBounds';
@@ -24,6 +24,21 @@ const PREVIEW_DAMPING = 0.5;   // reference stone damping for the guide
 const BOMB_PULSE_AMP = 0.15;   // loaded stone scale oscillation (±) while charged to a bomb
 const BOMB_PULSE_FREQ = 12;    // bomb pulse speed (rad/s)
 const AIM_EASE = 16;           // per-second ease rate for the bow arm + trajectory toward their targets (smooth both ways: invalid↔valid)
+const GAUGE_EASE = 14;         // per-second ease rate for the power gauge draining back to empty after release
+const MANA_SPIN = 45;          // deg/s perpetual rotation of the mana node
+const MANA_WOBBLE_AMP = 12;    // deg peak of the occasional wobble overlaid on the spin
+const MANA_WOBBLE_FREQ = 22;   // rad/s wobble oscillation
+const MANA_WOBBLE_DECAY = 6;   // wobble damping (higher = settles faster)
+const MANA_WOBBLE_MIN = 1.5;   // min seconds between wobbles
+const MANA_WOBBLE_MAX = 4.0;   // max seconds between wobbles
+const MANA_ALPHA_BASE = 200;   // mana opacity midpoint of the pulse (0..255)
+const MANA_ALPHA_AMP = 55;     // mana opacity pulse amplitude (±) → ranges base±amp
+const MANA_PULSE_FREQ = 4;     // rad/s of the mana alpha pulse
+const LAUNCH_WHITE = Color.WHITE;   // flash colour for the launch animation (loaded + fired stone)
+const LAUNCH_FLASH = 0.5;      // white amount (0..1) the launch flash reaches
+const LAUNCH_DROP_PX = 10;     // loaded stone drops this many px (screen) as it departs the launcher
+const LAUNCH_DROP_TIME = 0.1;  // duration of the loaded stone's drop + whiten on fire (reload waits this long)
+const FIRED_FLASH_TIME = 0.15; // fired stone fades from half white back to normal over this
 const BOMB_TINT = new Color(255, 70, 70, 255);   // red tint on the loaded stone while charged to a bomb
 const ARC_MAXDRAG = new Color(255, 210, 70, 230);   // debug arc: full-power drag distance (amber)
 const ARC_BOMB = new Color(255, 80, 80, 230);       // debug arc: bomb-arming drag distance (red)
@@ -69,6 +84,12 @@ export class StoneLauncher extends Component {
     launcherNode: Node | null = null;
     @property({ type: Node, tooltip: 'Authored bomb icon shown above the loaded stone while charged to a BOMB (kept inactive otherwise). Optional.' })
     bombIndicator: Node | null = null;
+    @property({ type: Node, tooltip: 'Power gauge LEFT half (rotates 180° at power 0 → 0° at full power). Optional.' })
+    gaugeLeft: Node | null = null;
+    @property({ type: Node, tooltip: 'Power gauge RIGHT half (rotates -180° at power 0 → 0° at full power). Optional.' })
+    gaugeRight: Node | null = null;
+    @property({ type: Node, tooltip: 'Mana energy node: spins perpetually and wobbles slightly now and then. Optional.' })
+    mana: Node | null = null;
     @property({ type: ArenaBounds, tooltip: 'Arena boundary — wall segments + material for the bounce trajectory.' })
     arenaBounds: ArenaBounds | null = null;
 
@@ -139,6 +160,14 @@ export class StoneLauncher extends Component {
     private _trajAlpha = 1;             // current global multiplier on the trajectory dot alpha (eased)
     private _trajTargetAlpha = 1;       // its target (1 = valid pose, 0 = invalid) → smooth fade in/out
     private _pulseT = 0;                // time accumulator for the bomb-charge pulse on the loaded stone
+    private _gauge = 0;                 // power shown on the gauge; follows power while aiming, eases to 0 after release
+    private _manaBase = 0;              // perpetual spin accumulator for the mana node
+    private _manaWobT = -1;             // time within the current wobble (-1 = idle, no wobble running)
+    private _manaNextWob = MANA_WOBBLE_MIN;   // seconds left until the next wobble kicks in
+    private _manaPulseT = 0;            // time accumulator for the mana alpha pulse
+    private _manaOpacity: UIOpacity | null = null;   // cached UIOpacity on the mana node (drives the pulse)
+    private readonly _dropT = { y: 0 };  // loaded stone's transient drop offset (px) during the launch departure
+    private _launching = false;          // true during the brief launch departure window (blocks a re-fire)
     private _dotColor = new Color(120, 220, 255, 200);   // reused in _drawDots (no per-frame alloc)
 
     /** True while the loaded stone's pop is running (the coordinator gates a swap on it). */
@@ -162,6 +191,12 @@ export class StoneLauncher extends Component {
         input.on(Input.EventType.MOUSE_DOWN,  this._onMouseDown,  this);
         input.on(Input.EventType.MOUSE_MOVE,  this._onMouseMove,  this);
         input.on(Input.EventType.MOUSE_UP,    this._onMouseUp,    this);
+        this._gauge = 0; this._setGaugePower(0);   // start empty (overrides the authored pose of the gauge halves)
+        if (this.mana) {
+            this._manaOpacity = this.mana.getComponent(UIOpacity) ?? this.mana.addComponent(UIOpacity);   // drives the alpha pulse
+            const sp = this.mana.getComponent(Sprite);   // additive blend (2D blend is a COMPONENT prop, not exposed in the 3.8 inspector)
+            if (sp) { sp.srcBlendFactor = gfx.BlendFactor.SRC_ALPHA; sp.dstBlendFactor = gfx.BlendFactor.ONE; }
+        }
     }
     onDisable(): void {
         input.off(Input.EventType.TOUCH_START, this._onTouchStart, this);
@@ -194,6 +229,7 @@ export class StoneLauncher extends Component {
     armReload(newType: number): void {
         this._loadedType = newType;
         this._loadedRune?.setType(newType);
+        this._loadedRune?.clearFlash();   // drop the launch-departure white before the next stone pops in
         this._loadPhase = 2; this._loadAnimT = 0; this._loadArmed = true; this._loadDelayT = this.loadPopDelay;
         this._positionLoadedStone();   // collapse to scale 0 now (no 1-frame full-size flash)
     }
@@ -268,7 +304,7 @@ export class StoneLauncher extends Component {
         const base = this.stoneViewScale * this.loadedScaleFactor;   // a bit smaller than the launched stone
         const pop = this._loadMult();   // baked here: the per-frame setScale would override a tween
         const pulse = this._bombCharged ? 1 + BOMB_PULSE_AMP * Math.sin(this._pulseT * BOMB_PULSE_FREQ) : 1;   // explosive throb
-        r.node.setPosition(lp.x, lp.y, 0);
+        r.node.setPosition(lp.x, lp.y + this._dropT.y, 0);   // _dropT.y = transient launch-departure drop
         r.node.setScale(base * sizeXFactor(gy) * pop * pulse, base * sizeYFactor(gy) * pop * pulse, 1);
     }
 
@@ -321,6 +357,28 @@ export class StoneLauncher extends Component {
         }
         this._updateLoadedPop(dt);
         this._positionLoadedStone();   // keep the resting stone glued to the launcher (survives resize)
+        if (this.mana) {               // mana: perpetual spin + an occasional damped wobble ("wabble")
+            this._manaBase = (this._manaBase - MANA_SPIN * dt) % 360;
+            let wob = 0;
+            if (this._manaWobT >= 0) {
+                this._manaWobT += dt;
+                wob = MANA_WOBBLE_AMP * Math.sin(this._manaWobT * MANA_WOBBLE_FREQ) * Math.exp(-this._manaWobT * MANA_WOBBLE_DECAY);
+                if (this._manaWobT > 1.2) this._manaWobT = -1;   // wobble has faded → idle until the next one
+            } else if ((this._manaNextWob -= dt) <= 0) {
+                this._manaWobT = 0;
+                this._manaNextWob = MANA_WOBBLE_MIN + Math.random() * (MANA_WOBBLE_MAX - MANA_WOBBLE_MIN);
+            }
+            this.mana.angle = this._manaBase + wob;
+            if (this._manaOpacity) {   // pulse the alpha (reads as energy "breathing"; needs additive blend on the sprite)
+                this._manaPulseT += dt;
+                this._manaOpacity.opacity = MANA_ALPHA_BASE + MANA_ALPHA_AMP * Math.sin(this._manaPulseT * MANA_PULSE_FREQ);
+            }
+        }
+        if (!this._aiming && this._gauge > 0.0005) {   // not aiming → drain the gauge gradually back to empty
+            this._gauge += (0 - this._gauge) * Math.min(1, dt * GAUGE_EASE);
+            if (this._gauge < 0.0005) this._gauge = 0;
+            this._setGaugePower(this._gauge);
+        }
         if (!this._aiming) return;
         this._trajPhase = (this._trajPhase + 160 * dt) % 30;
         const k = Math.min(1, dt * AIM_EASE);   // ease the arm + trajectory toward their targets (both ways: invalid↔valid)
@@ -340,7 +398,7 @@ export class StoneLauncher extends Component {
     private _onMouseUp(e: EventMouse):    void { const p = e.getUILocation(); this._release(p.x, p.y); }
 
     private _beginAim(x: number, y: number): void {
-        if (this._suspended) return;             // another mode (e.g. EDIT) owns the input → launcher inert
+        if (this._suspended || this._launching) return;   // another mode owns input, or mid launch-departure → inert
         if (this.onAimPress?.(x, y)) return;     // consumed by the coordinator (e.g. tap on NEXT → swap)
         if (!this._hitLauncher(x, y)) return;    // arm ONLY when the FIRST touch is ON the launcher (a tap/drag starting elsewhere is ignored; a pure click never reaches minDrag → never fires)
         this._aiming = true; this._cur.set(x, y);
@@ -373,7 +431,7 @@ export class StoneLauncher extends Component {
         const dir = this._groundDir(eff.x, eff.y);     // unit ground direction
         const spawn = this._spawnFrom(dir.x, dir.y);   // just outside the launcher body, along the shot
         const vel = dir.multiplyScalar(this.launchSpeed * power);
-        Stone.spawn({
+        const fired = Stone.spawn({
             arena: this.arena,
             layer: this.stoneLayer,
             viewPrefab: this.runePrefab,
@@ -388,11 +446,32 @@ export class StoneLauncher extends Component {
             isBomb,
             name: isBomb ? 'BombStone' : 'LaunchedStone',
         });
-        // The coordinator advances the queue and calls armReload()/next.reload() (collapses the loaded now).
-        this.onLaunch?.(this._loadedType);
+        fired.getComponent(Stone)?.flashFrom(LAUNCH_WHITE, LAUNCH_FLASH, FIRED_FLASH_TIME);   // starts half white, fades to normal
+
+        // Loaded stone DEPARTS: drop a few px + wash to half white over LAUNCH_DROP_TIME, THEN reload (the
+        // coordinator's armReload collapses it to 0). Delaying the reload keeps the departure visible.
+        const departedType = this._loadedType;
+        this._launching = true;
+        this._loadedRune?.flashTo(LAUNCH_WHITE, LAUNCH_FLASH, LAUNCH_DROP_TIME);
+        Tween.stopAllByTarget(this._dropT);
+        this._dropT.y = 0;
+        tween(this._dropT).to(LAUNCH_DROP_TIME, { y: -LAUNCH_DROP_PX }, { easing: 'quadIn' }).start();
+        this.scheduleOnce(() => {
+            Tween.stopAllByTarget(this._dropT);   // the drop tween holds at -10; stop it so the reset to 0 sticks
+            this._dropT.y = 0;                    // next stone pops in at the launcher origin, not 10px lower
+            this._launching = false;
+            this.onLaunch?.(departedType);   // advance the queue + reload (collapses the loaded, pops the next in)
+        }, LAUNCH_DROP_TIME);
     }
 
     private _abort(): void { this._aiming = false; this._bombCharged = false; this._path = []; this._clearPreview(); if (this.launcherNode) this.launcherNode.angle = 0; }
+
+    /** Drive the radial power gauge: each half sweeps from ±180° (empty) toward 0° (full). */
+    private _setGaugePower(power: number): void {
+        const t = 1 - Math.max(0, Math.min(1, power));   // 1 at empty, 0 at full
+        if (this.gaugeLeft)  this.gaugeLeft.angle  =  180 * t;
+        if (this.gaugeRight) this.gaugeRight.angle = -180 * t;
+    }
 
     /** Recompute aim + trajectory from the CURRENT touch, relative to the launcher. */
     private _resim(): void {
@@ -403,6 +482,7 @@ export class StoneLauncher extends Component {
             this._armTarget = 0;                   // update() eases the arm to neutral and fades the dots out
             this._trajTargetAlpha = 0;
             this._bombCharged = false;
+            this._gauge = 0; this._setGaugePower(0);
             return;
         }
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull
@@ -410,6 +490,7 @@ export class StoneLauncher extends Component {
         this._trajTargetAlpha = 1;                    // valid → update() eases arm + dots back in (symmetric transition)
         this._bombCharged = len >= this.maxDrag * this.bombDragFactor;   // in the bomb-overcharge zone (for the future cue)
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
+        this._gauge = power; this._setGaugePower(power);   // follows the drag directly while aiming
         const d0 = this._groundDir(eff.x, eff.y);
         const spawn = this._spawnFrom(d0.x, d0.y);
         this._path = this._simulate(spawn, d0.multiplyScalar(PREVIEW_SPEED * power));
