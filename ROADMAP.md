@@ -109,15 +109,15 @@
 
 - [x] **Detection HOUSE/TEE** — `House.ts` (zone = ellisse dello sprite a schermo, no Box2D); getter `houseArea`/`teeArea`, `collectStonesInHouse/OnTee`
 - [x] **Trigger curling** — `CurlingScorer` (stone **Dynamic** ferma sul TEE sotto `restSpeed` per `restDelay`s)
-- [x] **`RaisingStar`** — la stone colpita svanisce in star che vola lungo una bezier nel bersaglio (oggi: Aku più vicino → fallback Koolkan)
+- [x] **`RaisingStar`** — la stone colpita svanisce in star che vola lungo una bezier nel bersaglio (v0.2.8: **cubo-colonna più in alto dello stesso colore**; mira al centro della faccia rivolta al giocatore)
 - [x] **VFX** — `ManaLightning` (bolt a sprite-segmento), `SparkBurst`/`ImpactFlash` (da `resources`), white hit-flash (`SpriteFlash.effect` + `Stone.flashWhite`)
 - [x] **Aku** — `AkuAku` (anim hop/squash, ombra, blink, 8 varianti) + `AkuAkuSpawner` (NodePool, corpo Box2D) + `AkuAkuBehavior` (wander/dance/hit/eliminate) + morte elettrizzata/calciato-fuori (v0.2.5)
 
 ### Da fare — il colpo e le colonne *(nuovo)*
 
-- [ ] **Colonne sacre** — prefab "pila di pietre rettangolari" marcata col colore di un tipo di runa; **HP per pietra**; 2 colonne ai lati dell'altare (posa in editor)
-- [ ] **Bersaglio star = SOLO pietre-colonna dello stesso colore** — sostituire il targeting attuale (Aku/Koolkan) con la pietra-colonna del colore della stone sul TEE; riusare il sistema `claim`/registro
-- [ ] **Catena fuori-house** — includere nel colpo anche le stone stesso-tipo **quasi a contatto** appena fuori dall'HOUSE (raggio corto)
+- [x] **Colonne sacre** *(v0.2.7 scaffold + v0.2.8 HP)* — `ColumnCube`/`Column`/`RoundManager`; pila marcata per colore; **3 HP per cubo** (`HP_MAX`), flash+rimbalzo al colpo, shatter a 0; resta da posare le 2 colonne ai lati dell'altare + tarare HP/altezze
+- [x] **Bersaglio star = SOLO pietre-colonna dello stesso colore** *(v0.2.8)* — `RaisingStar` mira al **cubo più in alto** dello stesso `type` (registro `ColumnCube.all` + `reserve`/`release`: quantità prenotata ≤ HP, altrimenti scende al cubo dopo; ri-target a mezz'aria); niente più Aku/Koolkan
+- [x] **Catena fuori-house** *(2026-06-26 ter, NON buildato)* — `CurlingScorer` ora **propaga la scossa**: ogni stone colpita la passa a tutte le stone **stesso-tipo** con **gap bordo-bordo < 1/4 del proprio diametro** (`CHAIN_REACH=0.5`×raggio, ground space). BFS ricorsiva (`_shock`/`_propagate`/`_staggerDelay`) con `Set` anti-doppione; ogni anello ha il suo bolt staggerato e diventa `RaisingStar`. Raggio ancora da tarare in playtest
 - [ ] **No-match → valvola** — se non esiste pietra-colonna di quel colore, lo star **non parte** ma la stone sul TEE (+ connesse nell'HOUSE) si distrugge comunque (anti-overflow color-indipendente)
 - [ ] **Pietra-colonna con HP** — più colpi per romperla; al crollo, l'**Aku sopra si elettrizza** (collegamento colonna→Aku presente)
 
@@ -239,7 +239,7 @@
 
 > Aggiornato al 2026-06-26 — app v0.2.7. Core ridefinito a **v0.4** (loop colonne/Aku/risveglio, GDD §5-§6): design formalizzato, prossimo blocco = implementarlo sul codice esistente (curling/`RaisingStar`/Aku già in repo). Fase 1 quasi chiusa (resta shear gemma + ritiro `InputController`).
 
-1. **Implementare il core v0.4** (Fase 2): **colonne sacre** (prefab + HP) + target star = **pietre-colonna** stesso-colore (oggi mira Aku/Koolkan) + **elettrif. Aku** sulla colonna colpita + **catena fuori-house** (breve) + **ricostruzione colonne più alte** al round-up.
+1. **Implementare il core v0.4** (Fase 2): **colonne sacre** (prefab + HP) + target star = **pietre-colonna** stesso-colore (oggi mira Aku/Koolkan) + **elettrif. Aku** sulla colonna colpita + ~~catena fuori-house~~ ✅ fatta + **ricostruzione colonne più alte** al round-up.
 2. **Aku in preghiera + gauge di risveglio** (10 spiriti, 1/5s per Aku) + stati **sleep/wake** di Koolkan + **spawn-rune** di Koolkan sveglio.
 3. **Chiudere i TBD** (GDD §22): danno a Koolkan all'ultimo round, numeri (HP pietre / soglie gauge / raggio catena / n° Aku-pietre per round), n° colori + scaling, spawner, bombe, punteggio, prefill.
 4. **Validare il feel** (Milestone Fase 2): doppia pressione, curling soddisfacente, catena breve giusta.

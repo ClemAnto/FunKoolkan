@@ -1,13 +1,13 @@
 import { _decorator, Component, Node, Vec3, Mat4, Sprite, UIOpacity, ParticleSystem2D, Prefab, instantiate, gfx, Color, tween } from 'cc';
 import { Stone } from './Stone';
-import { Koolkan } from './Koolkan';
-import { AkuAku } from './AkuAku';
+import { ColumnCube } from './ColumnCube';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
 
 // Reused scratch (allocation-free).
 const _inv = new Mat4();
 const _wp = new Vec3();
+const _fw = new Vec3();   // face-centre world position of the target cube
 
 // ── Look constants (the fast "physics" of the choreography; the headline times are properties) ──
 const SPARKLE_NATIVE = 40;   // px the Sparkle prefab's star sprite is authored at → baseScale = sparkleSize / this
@@ -19,7 +19,7 @@ const FLASH_SQUASH   = 0.7;  // vertical squash of the impact flash (reads less 
 const MAX_STARS      = 48;   // safety cap on simultaneous stars
 
 /** One live raising-star: its nodes + the choreography state. The star is born at `p0` (FX-local), holds
- *  while flickering and shedding sparks, then accelerates along a bowed bezier to Koolkan's head. */
+ *  while flickering and shedding sparks, then accelerates along a bowed bezier into its target column cube. */
 interface Star {
     root: Node;                 // the Sparkle instance (moved along the path)
     op: UIOpacity | null;       // root opacity (birth fade-in; kept lit so the trail lingers after impact)
@@ -30,26 +30,27 @@ interface Star {
     ox: number; oy: number;     // random offset (px) added to the target so repeated hits scatter
     baseScale: number;          // sparkleSize / SPARKLE_NATIVE
     age: number;
-    targetAku: AkuAku | null;   // the claimed Aku-aku this star homes onto (null → it flies at Koolkan)
-    claimTok: number;           // the claim token (invalidated if that Aku dies/recycles → falls back to Koolkan)
+    type: number;               // the star's rune type (-1 = any) — used to re-home if its cube vanishes mid-flight
+    targetCube: ColumnCube | null;   // the reserved topmost same-type column cube this star homes onto & damages
 }
 
 /**
- * RaisingStar — the signature "struck stone becomes a star that slams into Koolkan" payoff. Authored in
- * the EDITOR: attach to a node (the same one as ManaLightning, or the Arena), assign `sparklePrefab`
- * (the Sparkle: a star Sprite + a sparks-trail ParticleSystem2D), the two impact prefabs
- * (`explosionFlashPrefab` = ImpactFlash, `explosionSparkPrefab` = SparkBurst) and `koolkanHead` (the node
- * to crash into — Koolkan's face).
+ * RaisingStar — the signature "struck stone becomes a star that slams into a sacred column" payoff (GDD
+ * v0.4). Authored in the EDITOR: attach to a node (the same one as ManaLightning, or the Arena), assign
+ * `sparklePrefab` (the Sparkle: a star Sprite + a sparks-trail ParticleSystem2D) and the two impact prefabs
+ * (`explosionFlashPrefab` = ImpactFlash, `explosionSparkPrefab` = SparkBurst).
  *
- * `launch(stone)` plays the full sequence for one struck stone (many can run at once — the curling cascade):
+ * `launch(stone, type)` plays the full sequence for one struck stone (many can run at once — the curling
+ * cascade). The star targets ONLY the TOPMOST column cube of the SAME type (never Aku-aku / Koolkan):
  *   1. POP    — after a beat the stone swells then shrinks to 0 & vanishes (Stone.vanishAsStar) — no rise.
  *   2. BIRTH  — the instant it's gone, a 40px sparkle fades in + zooms in there, then flickers & sheds sparks.
- *   3. FLIGHT — the sparkle ACCELERATES along a curved (bowed-bezier) path into Koolkan's head, trailing sparks.
- *   4. IMPACT — a small explosion (flash + sparks) on Koolkan's face; the sparkle dies, its trail lingering.
+ *   3. FLIGHT — the sparkle ACCELERATES along a curved (bowed-bezier) path into the cube, trailing sparks.
+ *   4. IMPACT — a flash + sparks on the cube, which loses 1 HP (and shatters at 0); the sparkle dies, trailing.
  *
- * No Graphics: every visual is a pooled-free prefab instance, animated by tween / driven in update(). The
- * star lives in this node's local space; endpoints are mapped world→local (Koolkan's head is re-read each
- * frame so the star homes onto his idle bob). `autoTestSeconds > 0` loops a test star from `testFrom`.
+ * If no same-type column cube is available the star simply does not spawn (the struck stone has already
+ * vanished). No Graphics: every visual is a pooled-free prefab instance, animated by tween / driven in
+ * update(). The star lives in this node's local space; the cube is re-read each frame so the star tracks it
+ * if the stack shifts. `autoTestSeconds > 0` loops a test star from `testFrom` at any available cube.
  */
 @ccclass('RaisingStar')
 @disallowMultiple
@@ -58,14 +59,11 @@ export class RaisingStar extends Component {
     @property({ type: Prefab, tooltip: 'The Sparkle prefab: a star Sprite (e.g. sparkle.png) plus a sparks ParticleSystem2D trail (FREE position so it streaks behind).' })
     sparklePrefab: Prefab | null = null;
 
-    @property({ type: Prefab, tooltip: 'Flash popped on Koolkan\'s face at impact (ImpactFlash). Leave empty to skip.' })
+    @property({ type: Prefab, tooltip: 'Flash popped on the cube at impact (ImpactFlash). Leave empty to skip.' })
     explosionFlashPrefab: Prefab | null = null;
 
-    @property({ type: Prefab, tooltip: 'Spark burst on Koolkan\'s face at impact (SparkBurst). Leave empty to skip.' })
+    @property({ type: Prefab, tooltip: 'Spark burst on the cube at impact (SparkBurst). Leave empty to skip.' })
     explosionSparkPrefab: Prefab | null = null;
-
-    @property({ type: Node, tooltip: 'The point the star crashes into — Koolkan\'s head/face. Re-read each frame so the star tracks his idle float.' })
-    koolkanHead: Node | null = null;
 
     @property({ range: [0, 1.5, 0.01], slider: true, tooltip: 'Beat (s) after the bolt reaches the stone before it pops: the stone swells then shrinks to 0, and the star is born.' })
     popDelay = 0.5;
@@ -83,14 +81,14 @@ export class RaisingStar extends Component {
     @property({ range: [0, 0.8, 0.01], slider: true, tooltip: 'How long (s) the sparkle hovers in place (flickering + shedding sparks) before it launches.' })
     holdTime = 0.28;
 
-    @property({ range: [0.2, 1.2, 0.01], slider: true, tooltip: 'How long (s) the flight to Koolkan takes. The star ACCELERATES (eased-in), so it slams home.' })
+    @property({ range: [0.2, 1.2, 0.01], slider: true, tooltip: 'How long (s) the flight to the cube takes. The star ACCELERATES (eased-in), so it slams home.' })
     flightTime = 0.55;
 
     @property({ range: [0, 300, 1], slider: true, tooltip: 'How far (px) the flight path bows sideways off the straight line — the curved trajectory. 0 = straight.' })
     curveBow = 130;
 
-    @property({ range: [0, 200, 1], slider: true, tooltip: 'Random radius (px) scattered around Koolkan\'s head where each star actually lands — so repeated hits don\'t all stack on the same pixel. 0 = dead centre.' })
-    hitSpread = 45;
+    @property({ range: [0, 200, 1], slider: true, tooltip: 'Random radius (px) scattered around the cube where each star actually lands — so repeated hits don\'t all stack on the same pixel. 0 = dead centre.' })
+    hitSpread = 8;
 
     @property({ range: [0, 0.4, 0.01], slider: true, tooltip: 'Flicker strength: the sparkle\'s scale jitters by ±this each frame (the fast trembling). 0 = steady.' })
     flicker = 0.13;
@@ -103,14 +101,12 @@ export class RaisingStar extends Component {
 
     @property({ type: Node, tooltip: 'Editor test only: start point for the auto-test star (autoTestSeconds). Gameplay passes the struck stone.' })
     testFrom: Node | null = null;
-    @property({ tooltip: 'Editor test: spawn a test star from testFrom → koolkanHead every N seconds. 0 = off.' })
+    @property({ tooltip: 'Editor test: spawn a test star from testFrom into any available column cube every N seconds. 0 = off.' })
     autoTestSeconds = 0;
 
     private _root: Node | null = null;       // shared parent for every live sparkle / flash / burst
     private readonly _stars: Star[] = [];
     private _warned = false;
-    private _boss: Koolkan | null = null;    // resolved from koolkanHead (self or ancestor) so impacts knock him back
-    private _bossResolved = false;
 
     onLoad(): void {
         const root = new Node('RaisingStarFX');
@@ -122,27 +118,32 @@ export class RaisingStar extends Component {
 
     start(): void {
         if (this.autoTestSeconds > 0) {
-            this.schedule(() => { if (this.testFrom?.isValid) this._spawnStar(this.testFrom.worldPosition); }, this.autoTestSeconds);
+            this.schedule(() => { if (this.testFrom?.isValid) this._spawnStar(this.testFrom.worldPosition, -1); }, this.autoTestSeconds);
         }
     }
 
-    /** Fire the full sequence for one struck stone: after a beat it pops (swells then shrinks to 0) and
-     *  vanishes; the instant it is gone a sparkle is born in its place, flies into Koolkan and explodes. */
-    launch(stone: Stone): void {
+    /** Fire the full sequence for one struck stone of `type`: after a beat it pops (swells then shrinks to 0)
+     *  and vanishes; the instant it is gone a sparkle is born in its place and flies into the topmost same-type
+     *  column cube, dealing it 1 HP. No matching cube → the stone still vanishes but no star spawns. */
+    launch(stone: Stone, type: number): void {
         if (!stone?.isValid || !stone.viewNode?.isValid) return;
         const from = stone.viewNode.worldPosition.clone();   // the star is born here (the stone pops in place)
         // 1. the stone pops & self-destructs; 2. when it's gone, the sparkle is born where it stood.
-        stone.vanishAsStar(this.popDelay, this.popExpand, this.popTime, () => this._spawnStar(from));
+        stone.vanishAsStar(this.popDelay, this.popExpand, this.popTime, () => this._spawnStar(from, type));
     }
 
-    /** Spawn a sparkle at a WORLD position and register it for the birth → flight → impact choreography. */
-    private _spawnStar(fromWorld: Readonly<Vec3>): void {
+    /** Spawn a sparkle at a WORLD position and register it for the birth → flight → impact choreography. It
+     *  homes onto the topmost same-`type` column cube (type < 0 → any cube, for the editor auto-test). No
+     *  available cube → no star (the struck stone has already vanished). */
+    private _spawnStar(fromWorld: Readonly<Vec3>, type: number): void {
         if (!this._root?.isValid) return;                    // component torn down before the stone finished popping
         if (!this.sparklePrefab) {
             if (!this._warned) { console.warn('[RaisingStar] sparklePrefab not assigned — nothing to spawn'); this._warned = true; }
             return;
         }
         if (this._stars.length >= MAX_STARS) return;
+        const cube = this._claimTopmostCube(type);
+        if (!cube) return;                                   // no same-type column cube to hit → don't spawn a star
 
         const root = instantiate(this.sparklePrefab);
         this._applyLayer(root, this._root!.layer);
@@ -163,26 +164,26 @@ export class RaisingStar extends Component {
         if (trail) { trail.srcBlendFactor = gfx.BlendFactor.SRC_ALPHA; trail.dstBlendFactor = gfx.BlendFactor.ONE; }   // additive sparks
 
         const spread = this.hitSpread;
-        // Target the NEAREST unclaimed Aku-aku (so no two stars share one); none free → it flies at Koolkan.
-        const claim = this._claimNearestAku(fromWorld);
         this._stars.push({ root, op, star, trail, p0, side: Math.random() < 0.5 ? -1 : 1,
             ox: (Math.random() * 2 - 1) * spread, oy: (Math.random() * 2 - 1) * spread, baseScale, age: 0,
-            targetAku: claim?.aku ?? null, claimTok: claim?.tok ?? 0 });
+            type, targetCube: cube });
     }
 
-    /** Claim the nearest unclaimed, live Aku-aku to `fromWorld` so this star homes onto it and no other star
-     *  picks the same one. Returns null when there are no free Aku-aku (the star then targets Koolkan). */
-    private _claimNearestAku(fromWorld: Readonly<Vec3>): { aku: AkuAku; tok: number } | null {
-        const all = AkuAku.all;
-        let best: AkuAku | null = null, bestD = Infinity;
+    /** Claim the TOPMOST (highest on screen) still-targetable column cube of `type` (type < 0 → any type), so
+     *  this star homes onto it. Reserves one of its HP so a cluster of stars spreads across cubes rather than
+     *  overkilling one. Returns null when no such cube exists (the star then doesn't spawn). */
+    private _claimTopmostCube(type: number): ColumnCube | null {
+        const all = ColumnCube.all;
+        let best: ColumnCube | null = null, bestY = -Infinity;
         for (let i = 0; i < all.length; i++) {
-            const a = all[i];
-            if (!a?.node?.isValid || !a.claimable) continue;
-            const wp = a.node.worldPosition;
-            const dx = wp.x - fromWorld.x, dy = wp.y - fromWorld.y, d = dx * dx + dy * dy;
-            if (d < bestD) { bestD = d; best = a; }
+            const c = all[i];
+            if (!c?.node?.isValid || !c.targetable) continue;
+            if (type >= 0 && c.type !== type) continue;
+            const y = c.node.worldPosition.y;
+            if (y > bestY) { bestY = y; best = c; }
         }
-        return best ? { aku: best, tok: best.claim() } : null;
+        if (best) best.reserve();
+        return best;
     }
 
     update(dt: number): void {
@@ -213,7 +214,10 @@ export class RaisingStar extends Component {
                 continue;
             }
 
-            // ── FLIGHT: accelerate along a bowed quadratic bezier into the target (claimed Aku-aku, else Koolkan). ──
+            // ── FLIGHT: accelerate along a bowed quadratic bezier into the reserved column cube. ──
+            // If the reserved cube vanished mid-flight (e.g. a round reset), re-home onto another same-type
+            // cube (reserving one of ITS HP); if none is left the star fizzles at impact.
+            if (!s.targetCube?.node?.isValid) s.targetCube = this._claimTopmostCube(s.type);
             const ft = (s.age - birth - hold) / fly;
             if (ft >= 1 || !this._targetLocal(s, _wp)) { this._impact(s); this._stars.splice(i, 1); continue; }
             const u = ft * ft;                                  // eased-in → the star accelerates and slams home
@@ -229,48 +233,34 @@ export class RaisingStar extends Component {
         }
     }
 
-    /** Impact: a flash where the star lands, then the sparkle dies (trail lingers). If it hit a claimed Aku-aku,
-     *  that Aku plays its electrified-explode death (it spawns its own spark burst); otherwise it's Koolkan —
-     *  a spark burst on his face + a recoil. */
+    /** Impact: a flash + spark burst where the star lands, the target cube takes 1 HP (shattering at 0), then
+     *  the sparkle dies (trail lingers). If the cube vanished mid-flight (e.g. a round reset) the star just
+     *  fizzles with a flash and deals no damage. */
     private _impact(s: Star): void {
         const onTarget = this._targetLocal(s, _wp);
         const hx = (onTarget ? _wp.x : s.p0.x) + s.ox, hy = (onTarget ? _wp.y : s.p0.y) + s.oy;   // same scattered point
-        const aku = (s.targetAku && s.targetAku.claimValid(s.claimTok)) ? s.targetAku : null;
         this._flash(hx, hy, this.explosionScale);              // a flash at the moment of impact either way
-        if (aku) {
-            aku.electrifyAndExplode();                         // leap + white/cyan electrified pulse + spark burst (its own)
-        } else {
-            this._burst(this.explosionSparkPrefab, hx, hy);    // Koolkan: spark burst on his face...
-            this._koolkan()?.hit();                            // ...and knock him slightly back
-        }
+        this._burst(this.explosionSparkPrefab, hx, hy);        // sparks on the cube
+        if (s.targetCube?.node?.isValid) s.targetCube.applyHit();   // -1 HP (consumes the reservation; shatters at 0)
+        s.targetCube = null;
         if (s.star?.isValid) s.star.active = false;            // the star is "consumed"; keep root lit for the trail
         if (s.trail?.isValid) s.trail.stopSystem();            // stop emitting; live sparks finish in place (FREE)
         this.scheduleOnce(() => { if (s.root?.isValid) s.root.destroy(); }, TRAIL_LINGER);
     }
 
-    /** The star's TARGET in this node's LOCAL space (where the path lives): the claimed Aku-aku if still valid,
-     *  else Koolkan's head. Re-read each frame so the star homes onto a moving target. False if neither exists. */
+    /** The star's TARGET — the CENTRE of its reserved cube's player-facing face — in this node's LOCAL space
+     *  (where the path lives). Re-read each frame so the star tracks the cube if the stack shifts. False once
+     *  the cube is gone → the star ends. */
     private _targetLocal(s: Star, out: Vec3): boolean {
+        const c = s.targetCube;
+        if (!c?.node?.isValid) return false;
         Mat4.invert(_inv, this.node.worldMatrix);
-        if (s.targetAku && s.targetAku.claimValid(s.claimTok) && s.targetAku.node?.isValid) {
-            Vec3.transformMat4(out, s.targetAku.node.worldPosition, _inv);
-            return true;
-        }
-        if (this.koolkanHead?.isValid) { Vec3.transformMat4(out, this.koolkanHead.worldPosition, _inv); return true; }
-        return false;
+        c.faceCenterWorld(_fw);
+        Vec3.transformMat4(out, _fw, _inv);
+        return true;
     }
 
-    /** The Koolkan boss, resolved (once) from `koolkanHead` — whether the head IS his node or a child of it
-     *  (e.g. a dedicated face anchor). Null if koolkanHead isn't under a Koolkan → impacts just skip the recoil. */
-    private _koolkan(): Koolkan | null {
-        if (!this._bossResolved && this.koolkanHead?.isValid) {
-            this._bossResolved = true;
-            this._boss = this.koolkanHead.getComponent(Koolkan) ?? this.koolkanHead.getComponentInParent(Koolkan);
-        }
-        return this._boss;
-    }
-
-    /** A quick flash that pops in then fades out at (x,y) — the impact burst on Koolkan's face. */
+    /** A quick flash that pops in then fades out at (x,y) — the impact burst on the cube. */
     private _flash(x: number, y: number, peakScale: number): void {
         if (!this.explosionFlashPrefab) return;
         const n = instantiate(this.explosionFlashPrefab);
@@ -321,7 +311,7 @@ export class RaisingStar extends Component {
     onDestroy(): void {
         for (let i = 0; i < this._stars.length; i++) {
             const s = this._stars[i];
-            if (s.targetAku?.isValid) s.targetAku.releaseClaim(s.claimTok);   // free its reserved Aku-aku
+            if (s.targetCube?.node?.isValid) s.targetCube.release();   // free its reserved cube HP
             if (s.root?.isValid) s.root.destroy();
         }
         this._stars.length = 0;

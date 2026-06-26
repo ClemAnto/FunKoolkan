@@ -5019,7 +5019,7 @@
     "holdTime": 0.28,
     "flightTime": 0.55,
     "curveBow": 130,
-    "hitSpread": 45,
+    "hitSpread": 8,
     "flicker": 0.13,
     "explosionScale": 0.55,
     "color": {

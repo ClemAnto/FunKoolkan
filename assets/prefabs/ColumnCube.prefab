@@ -156,7 +156,10 @@
     "__prefab": {
       "__id__": 6
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -358,7 +361,10 @@
     "__prefab": {
       "__id__": 13
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -494,7 +500,10 @@
     "__prefab": {
       "__id__": 19
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -630,7 +639,10 @@
     "__prefab": {
       "__id__": 25
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -766,7 +778,10 @@
     "__prefab": {
       "__id__": 31
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -902,7 +917,10 @@
     "__prefab": {
       "__id__": 37
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {
@@ -1038,7 +1056,10 @@
     "__prefab": {
       "__id__": 43
     },
-    "_customMaterial": null,
+    "_customMaterial": {
+      "__uuid__": "82efe33d-7307-4f6a-ab0a-f73adc1c58e9",
+      "__expectedType__": "cc.Material"
+    },
     "_srcBlendFactor": 2,
     "_dstBlendFactor": 4,
     "_color": {

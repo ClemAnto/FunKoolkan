@@ -360,7 +360,7 @@
   },
   {
     "__type__": "cc.PrefabInstance",
-    "fileId": "11WYkShv5A06pkvsicDo3k",
+    "fileId": "516/pWMXlLwqGFWPGljwGL",
     "prefabRootNode": {
       "__id__": 1
     },
@@ -444,7 +444,7 @@
     "_cubeTypes": [
       1,
       2,
-      0
+      2
     ],
     "_id": ""
   },
