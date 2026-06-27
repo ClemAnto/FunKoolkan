@@ -7,6 +7,7 @@ import { Bomb } from './Bomb';
 
 const { ccclass } = _decorator;
 const _v = new Vec3();
+const STAR_FLASH = new Color(255, 255, 255, 255);   // white wash that accompanies the pop into a star
 
 /**
  * Links a moving Box2D body to its visual rune (a prefab instance) in another layer.
@@ -189,6 +190,8 @@ export class Stone extends Component {
         this._spring.s = 1;
         tween(this._spring)
             .delay(delay)
+            // Flash white IN SYNC with the pop: wash up as it swells (grow), fade as it shrinks to nothing.
+            .call(() => this.flashWhite(STAR_FLASH, 1, grow, shrink))
             .to(grow, { s: expand }, { easing: 'backOut' })
             .to(shrink, { s: 0 }, { easing: 'backIn' })
             .call(() => {

@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Vec2, Vec3, UIOpacity, Sprite, Material, Color, CCInteger, tween, Tween, Enum, RigidBody2D, ERigidBody2DType, CircleCollider2D, Graphics, UITransform, Contact2DType, Collider2D, Prefab, instantiate, ParticleSystem2D, resources, view } from 'cc';
+import { _decorator, Component, Node, Vec2, Vec3, Vec4, UIOpacity, Sprite, Material, Color, CCInteger, tween, Tween, Enum, RigidBody2D, ERigidBody2DType, CircleCollider2D, Graphics, UITransform, Contact2DType, Collider2D, Prefab, instantiate, ParticleSystem2D, resources, view } from 'cc';
 import { EDITOR } from 'cc/env';
 import { physicsDepth, physicsWidth, projectX, projectY, sizeXFactor } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
@@ -22,21 +22,19 @@ const _v = new Vec3();
 
 /** Lifecycle phase of an Aku-aku. The spawner / wake-gauge logic decides WHEN to switch (e.g. hit() while
  *  it still has lives, eliminate() on the killing blow); this component only PLAYS the look of each phase. */
-enum Phase { Idle, Dance, Move, Emerge, Hit, Eliminated, Zapped }
+enum Phase { Idle, Dance, Move, Emerge, Hit, Eliminated, Zapped, Pray }
 
 /** Auto-played state on start() — for trying the feel in play mode before the spawner exists. */
-enum StartState { None, Idle, Dance }
+enum StartState { None, Idle, Dance, Pray }
 Enum(StartState);
 
 // ── Feel (hardcoded; the few high-level knobs below scale these). All amplitudes are in PREFAB units,
 //    so they shrink automatically with depth via the root's projected scale. ──
 const STRETCH_RATIO  = 0.7;   // mid-air stretch as a fraction of the squash amount
 const CONTACT_SHARP  = 3;     // snappiness of the landing/takeoff squash pulse (higher = sharper)
-const BREATH_AMP     = 0.10;  // idle breathing (±10% height) — volume-preserved → a rubbery wobble, never still
+const BREATH_AMP     = 0.04;  // idle breathing (±4% height) — volume-preserved, anchored at the feet → subtle, not a heave
 const BREATH_W       = (Math.PI * 2) / 1.9;
-const IDLE_BOB       = 5;     // px the whole body floats up/down at idle (a touch of life)
-const IDLE_BOB_W     = (Math.PI * 2) / 2.7;
-const IDLE_SWAY_DEG  = 3.5;   // idle gentle tilt (bigger = goofier)
+const IDLE_SWAY_DEG  = 1.5;   // idle gentle tilt (bigger = goofier)
 const IDLE_SWAY_W    = (Math.PI * 2) / 3.1;
 const DANCE_TILT_DEG = 12;    // alternating lean per hop while dancing
 const DANCE_SHIFT    = 0.16;  // horizontal micro-shift per hop, as a fraction of hopHeight
@@ -93,6 +91,25 @@ const BLINK_DOUBLE = 0.25;    // chance a blink is a quick double
 const BLINK_GAP2   = 0.14;    // s: pause before the second blink of a double
 const BLINK_DESYNC = 0.05;    // s: max stagger between the two eyes within ONE blink (almost-but-not-quite synced)
 
+// Prayer: the same gentle idle sway, but eyes CLOSED — the INVERSE of blink. Every so often the Aku peeks,
+// opening ONE random eye (or, less often, BOTH) for a short beat, then shuts them again.
+const PRAY_PEEK_MIN = 1.8;    // s: shortest gap between peeks
+const PRAY_PEEK_MAX = 4.6;    // s: longest gap between peeks
+const PRAY_PEEK_DUR = 0.5;    // s: how long the peeked eye(s) stay open
+const PRAY_BOTH     = 0.3;    // chance a peek opens BOTH eyes (else just one, picked at random)
+const PRAY_BREATH_AMP = 0.04; // praying breath is calmer than idle (BREATH_AMP) → a subtle wobble, not a heave
+const PRAY_SWAY_DEG   = 1.5;  // and a barely-there sway (vs IDLE_SWAY_DEG) → mostly still, head bowed
+// Prayer aura: a feathered INNER glow on the body sprite while praying (via the SpriteFlash material's glow). The
+// glow stays inside the silhouette → no clipping / no texture padding. STATIC here — animate the intensity later
+// for a pulse.
+const GLOW_COLOR     = new Color(170, 80, 255, 255);    // purple "spirit" rim
+const GLOW_REACH     = 0.07;  // inner-rim reach as a UV fraction of the sprite (resolution-independent: no texture-size read)
+const GLOW_FALLOFF   = 1.3;   // >1 = tighter to the edge
+const GLOW_QUALITY   = 0;     // sampling quality (0 low .. 3 ultra) — Low (2×6 taps): perf first, precision not critical
+const GLOW_PULSE_MIN = 0.25;  // intensity at the dim point of the prayer pulse
+const GLOW_PULSE_MAX = 0.9;   // intensity at the bright point
+const GLOW_PULSE_W   = (Math.PI * 2) / 1.6;   // pulse rate (~1.6 s per breath)
+
 /**
  * Aku-aku — a cute-but-mischievous island spirit (DRAFT enemy of the early rounds: they dance to wake
  * Koolkan; the player knocks them off the cliff before the wake-gauge fills). Authored in the EDITOR as a
@@ -137,6 +154,10 @@ export class AkuAku extends Component {
 
     @property({ type: Node, tooltip: 'Optional ground shadow (a child of the ROOT, sibling of `body`). Stays on the ground while the body hops; it shrinks & lightens with the hop height to sell the jump.' })
     shadow: Node | null = null;
+
+    @property({ type: ParticleSystem2D, tooltip: 'Prayer bubbles — the authored ParticleSystem2D in the Aku\'s VFX node (emitting upward). Stopped by default; played while praying, stopped otherwise.' })
+    prayerBubbles: ParticleSystem2D | null = null;
+
 
     @property({ range: [0, 1, 0.01], slide: true, tooltip: 'Squash & stretch intensity on every hop. 0 = rigid, 1 = very rubbery.' })
     squashAmount = 0.35;
@@ -240,6 +261,12 @@ export class AkuAku extends Component {
     private readonly _eyeOffset: number[] = [];   // per-eye stagger within the blink (a few ms → "almost" synced)
     private readonly _eyeDone: boolean[] = [];    // per-eye: reopened, this blink finished
 
+    // Prayer eyes (the inverse of blink): eyes CLOSED by default, occasionally peeking one (random) or both open.
+    private _prayActive = false;    // a peek is currently open
+    private _prayT = 0;             // countdown to the next peek
+    private _prayElapsed = 0;       // time since the current peek opened
+    private readonly _eyeOpen: boolean[] = [];   // per-eye: opened during the current peek (→ shut it again after)
+
     // Ground shadow: authored pose + base opacity, captured once; driven by the hop height each frame.
     private readonly _shadowScale = new Vec3(1, 1, 1);
     private _shadowOp: UIOpacity | null = null;
@@ -252,6 +279,12 @@ export class AkuAku extends Component {
     private readonly _flashT = { v: 0 };
     private _flashTween: Tween<{ v: number }> | null = null;
 
+    // Prayer inner-glow (same SpriteFlash material, glowColor/glowParams) — pulses purple while praying, off otherwise.
+    private readonly _glowColor = new Color(GLOW_COLOR.r, GLOW_COLOR.g, GLOW_COLOR.b, 0);   // .a = intensity × 255
+    private readonly _glowParams = new Vec4(0, 0, GLOW_FALLOFF, 0);                          // .xy = uv radius, .z = falloff
+    private _glowing = false;   // glow active (pulsing) — true only while praying
+    private _glowT = 0;         // pulse clock
+
     // Live registry (runtime only) — RaisingStar reads it to target / claim the nearest Aku-aku.
     private static _allAku: AkuAku[] = [];
     static get all(): readonly AkuAku[] { return AkuAku._allAku; }
@@ -263,7 +296,7 @@ export class AkuAku extends Component {
         const c = AkuAku._fx[path];
         if (c !== undefined) return c;
         AkuAku._fx[path] = null;
-        resources.load(path, Prefab, (err, p) => { AkuAku._fx[path] = err ? null : p; });
+        resources.load(path, Prefab, (err, p) => { if (err) console.warn(`[AkuAku] failed to load VFX prefab "${path}" — is it imported under assets/resources/?`, err); AkuAku._fx[path] = err ? null : p; });
         return null;
     }
 
@@ -289,6 +322,7 @@ export class AkuAku extends Component {
         if (this._externallyDriven) return;   // a spawner owns this one → ignore the editor's test startState
         if (this.startState === StartState.Idle) this.wait();
         else if (this.startState === StartState.Dance) this.dance();
+        else if (this.startState === StartState.Pray) this.pray();
     }
 
     // ── Public API (the spawner / round logic drives these) ─────────────────────────────────────────────
@@ -459,6 +493,10 @@ export class AkuAku extends Component {
     /** Dance the wake ritual: rhythmic in-place hopping with an alternating lean. */
     dance(): void { if (this._phase !== Phase.Dance) this._t = 0; this._enter(Phase.Dance); }   // start the hop from the ground
 
+    /** Pray the wake ritual: the SAME gentle idle sway, but with eyes CLOSED — every so often it peeks, opening
+     *  one random eye (or, less often, both) for a beat, then shuts them again. */
+    pray(): void { if (this._phase === Phase.Pray) return; this._enter(Phase.Pray); this._initPray(); this._setGlow(true); this._setBubbles(true); }
+
     /** Hop from here to a ground point; `onArrive` fires once it lands on the target (then it goes Idle). When
      *  `hops` is given the travel is sized to take ~that many hops (regardless of distance). The sprite flips
      *  to face the travel direction (moving left → faces left). */
@@ -481,6 +519,7 @@ export class AkuAku extends Component {
     hit(color?: Color, onDone?: () => void): void {
         if (!this.alive) return;
         this._flash(color ?? HIT_FLASH_COLOR);
+        this._setGlow(false); this._setBubbles(false);              // interrupted → drop the prayer aura during the recoil
         if (this._phase !== Phase.Hit) this._resume = this._phase;   // remember where to return
         this._phase = Phase.Hit;
         this._hitTween?.stop();
@@ -495,7 +534,10 @@ export class AkuAku extends Component {
             // squash on impact → spring up & overshoot (elasticOut bounce) = exaggerated, rubbery recoil
             .to(HIT_OUT_T, { position: new Vec3(this._bodyPos.x, this._bodyPos.y + HIT_POP, this._bodyPos.z), scale: new Vec3(this._bodyScale.x * 1.25 * fx, this._bodyScale.y * 0.75, 1), angle: this._bodyAngle + HIT_SPIN }, { easing: 'quadOut' })
             .to(HIT_BACK_T, { position: this._bodyPos.clone(), scale: new Vec3(this._bodyScale.x * fx, this._bodyScale.y, 1), angle: this._bodyAngle }, { easing: 'elasticOut' })
-            .call(() => { this._initBlink(); if (onDone) onDone(); else this._phase = this._resume; })   // eyes reopen, blinks rescheduled
+            .call(() => {   // eyes reopen (or resume praying); blinks/peeks rescheduled
+                if (onDone) { this._initBlink(); onDone(); }
+                else { this._phase = this._resume; if (this._resume === Phase.Pray) { this._initPray(); this._setGlow(true); this._setBubbles(true); } else this._initBlink(); }
+            })
             .start();
     }
 
@@ -506,6 +548,7 @@ export class AkuAku extends Component {
     eliminate(dirX = 0): void {
         if (!this.alive) return;
         this._flash(ELIM_FLASH_COLOR, 0.9);                          // red flash as it's knocked off
+        this._setGlow(false); this._setBubbles(false);               // drop the prayer aura if it was praying
         this._phase = Phase.Eliminated;
         this._claimed = false;
         this._hitTween?.stop(); this._hitTween = null;
@@ -555,6 +598,7 @@ export class AkuAku extends Component {
      *  vanish (recycled via onGone). A different death from eliminate()'s cliff dive. */
     electrifyAndExplode(): void {
         if (!this.alive) return;
+        this._setGlow(false); this._setBubbles(false);               // drop the prayer aura if it was praying
         this._phase = Phase.Zapped;
         this._claimed = false;                                       // consumed
         this._hitTween?.stop(); this._hitTween = null;
@@ -641,6 +685,7 @@ export class AkuAku extends Component {
         this._setFlash(0);
         this._opacity().opacity = 255;
         if (this.shadow) { this.shadow.active = true; this.shadow.setScale(this._shadowScale); }
+        this._setGlow(false); this._setBubbles(false);   // no prayer aura until it prays again
         this._applyShadow(0);
     }
 
@@ -650,9 +695,11 @@ export class AkuAku extends Component {
 
     update(dt: number): void {
         if (EDITOR) return;   // @executeInEditMode is only for the variant preview — never animate in the editor
-        if (this._phase <= Phase.Move) this._tickBlink(dt);   // blink while alive & grounded (not Hit/Eliminated)
+        if (this._phase <= Phase.Move) this._tickBlink(dt);          // blink while alive & grounded (not Hit/Eliminated)
+        else if (this._phase === Phase.Pray) this._tickPrayEyes(dt);  // prayer: eyes closed, occasional peeks
         switch (this._phase) {
             case Phase.Idle:       this._tickIdle(dt); break;
+            case Phase.Pray:       this._tickPray(dt); this._tickGlow(dt); break;   // idle sway (feet planted) + pulsing purple rim
             case Phase.Dance:      this._tickHop(dt, true); break;
             case Phase.Move:       this._tickMove(dt); break;
             case Phase.Emerge:     break;                 // driven by the emerge tween
@@ -669,7 +716,7 @@ export class AkuAku extends Component {
      *  tick-driven entry blends FROM wherever their tween left it. */
     private _applyBody(dt: number): void {
         const b = this.body;
-        const driven = this._phase === Phase.Idle || this._phase === Phase.Dance || this._phase === Phase.Move;
+        const driven = this._phase === Phase.Idle || this._phase === Phase.Dance || this._phase === Phase.Move || this._phase === Phase.Pray;
         if (!b || !driven) { this._appliedPhase = this._phase; return; }
         if (this._phase !== this._appliedPhase) {       // just switched into a tick-driven state → capture + restart blend
             this._posC.set(b.position); this._sclC.set(Math.abs(b.scale.x), b.scale.y, 1); this._angC = b.angle;   // x = magnitude (facing re-applied below)
@@ -745,10 +792,22 @@ export class AkuAku extends Component {
         this._t += dt;
         if (!this.body) return;
         const breath = 1 + Math.sin(this._t * BREATH_W) * BREATH_AMP;
-        const bob = Math.sin(this._t * IDLE_BOB_W) * IDLE_BOB;
         const sway = Math.sin(this._t * IDLE_SWAY_W) * IDLE_SWAY_DEG;
-        this._posT.set(this._bodyPos.x, this._bodyPos.y + bob, this._bodyPos.z);
+        this._posT.set(this._bodyPos.x, this._bodyPos.y, this._bodyPos.z);   // feet planted — no bob
         this._sclT.set(this._bodyScale.x / breath, this._bodyScale.y * breath, 1);   // volume-preserved squash → gommoso
+        this._angT = this._bodyAngle + sway;
+        this._applyShadow(0);   // grounded → full shadow
+    }
+
+    /** Prayer: like idle, but the FEET stay planted on the ground — no vertical bob. Only the volume-preserving
+     *  breath (anchored at the feet) and a gentle sway, so it reads as kneeling/praying rather than floating. */
+    private _tickPray(dt: number): void {
+        this._t += dt;
+        if (!this.body) return;
+        const breath = 1 + Math.sin(this._t * BREATH_W) * PRAY_BREATH_AMP;
+        const sway = Math.sin(this._t * IDLE_SWAY_W) * PRAY_SWAY_DEG;
+        this._posT.set(this._bodyPos.x, this._bodyPos.y, this._bodyPos.z);   // feet planted — no bob
+        this._sclT.set(this._bodyScale.x / breath, this._bodyScale.y * breath, 1);   // breath from the feet up
         this._angT = this._bodyAngle + sway;
         this._applyShadow(0);   // grounded → full shadow
     }
@@ -878,7 +937,9 @@ export class AkuAku extends Component {
     private _enter(p: Phase): void {
         if (this._phase === p) return;
         if (this._phase === Phase.Hit) { this._hitTween?.stop(); this._hitTween = null; }
+        const wasPray = this._phase === Phase.Pray;
         this._phase = p;
+        if (wasPray) { this._setGlow(false); this._setBubbles(false); if (p <= Phase.Move) this._initBlink(); }   // leaving prayer → glow + bubbles off, eyes reopen
         // Kinematic while travelling (the AI drives it, it shoves stones aside); Dynamic otherwise (the runes
         // shove the Aku-aku). Hit/Emerge keep whatever they had — they set _phase directly, not via _enter.
         this._setBodyType(p === Phase.Move ? ERigidBody2DType.Kinematic : ERigidBody2DType.Dynamic);
@@ -969,6 +1030,50 @@ export class AkuAku extends Component {
         }
     }
 
+    /** (Re)initialise prayer eyes: shut every eye and schedule the first peek. The eyes ARE the children of the
+     *  active variant (derived, never wired by property — same as blink). */
+    private _initPray(): void {
+        const host = this._eyeHost;
+        const n = host?.isValid ? host.children.length : 0;
+        this._eyeOpen.length = n;
+        for (let i = 0; i < n; i++) { this._eyeOpen[i] = false; if (host!.children[i]?.isValid) host!.children[i].active = true; }   // closed
+        this._prayActive = false;
+        this._prayElapsed = 0;
+        this._prayT = PRAY_PEEK_MIN + Math.random() * (PRAY_PEEK_MAX - PRAY_PEEK_MIN);
+    }
+
+    /** Prayer eyes — the INVERSE of blink: eyes stay CLOSED; when the timer fires, open ONE random eye (or, less
+     *  often, BOTH) for PRAY_PEEK_DUR, then shut again and reschedule. */
+    private _tickPrayEyes(dt: number): void {
+        const host = this._eyeHost;
+        if (!host?.isValid) return;
+        const ch = host.children;
+        if (this._prayActive) {
+            this._prayElapsed += dt;
+            if (this._prayElapsed >= PRAY_PEEK_DUR) {                          // peek over → shut the opened eye(s)
+                for (let i = 0; i < ch.length && i < this._eyeOpen.length; i++) {
+                    if (this._eyeOpen[i] && ch[i]?.isValid) ch[i].active = true;
+                    this._eyeOpen[i] = false;
+                }
+                this._prayActive = false;
+                this._prayT = PRAY_PEEK_MIN + Math.random() * (PRAY_PEEK_MAX - PRAY_PEEK_MIN);
+            }
+            return;
+        }
+        this._prayT -= dt;
+        if (this._prayT <= 0) {                                                // open a peek
+            this._prayActive = true;
+            this._prayElapsed = 0;
+            const both = ch.length >= 2 && Math.random() < PRAY_BOTH;
+            const pick = ch.length ? Math.floor(Math.random() * ch.length) : -1;
+            for (let i = 0; i < ch.length && i < this._eyeOpen.length; i++) {
+                const open = both || i === pick;
+                this._eyeOpen[i] = open;
+                if (open && ch[i]?.isValid) ch[i].active = false;             // open = hide the closed-eye sprite
+            }
+        }
+    }
+
     /** Flip the sprite to face `dir` (+1 right, −1 left) with a quick rubbery turn-around: the flip multiplier
      *  eases THROUGH 0, so the silhouette squashes thin then springs back out facing the other way. */
     private _setFacing(dir: number): void {
@@ -1009,6 +1114,42 @@ export class AkuAku extends Component {
         if (!this._flashMats.length) return;
         this._flashColor.a = Math.round(Math.max(0, Math.min(1, v)) * 255);
         for (let i = 0; i < this._flashMats.length; i++) this._flashMats[i].setProperty('flashColor', this._flashColor);
+    }
+
+    /** Toggle the prayer inner-glow on the shown variant's sprite (SpriteFlash material's glowColor/glowParams).
+     *  While on it PULSES purple via _tickGlow; off zeroes it. No-op if the material/texture isn't there. */
+    private _setGlow(on: boolean): void {
+        this._glowing = on;
+        this._ensureFlashMats();
+        if (!this._flashMats.length) return;
+        if (on) {
+            this._glowParams.set(GLOW_REACH, GLOW_REACH, GLOW_FALLOFF, GLOW_QUALITY);   // UV fraction → no texture-size read
+            this._glowT = 0;
+            this._glowColor.set(GLOW_COLOR.r, GLOW_COLOR.g, GLOW_COLOR.b, Math.round(GLOW_PULSE_MIN * 255));   // start at the dim point
+            for (let i = 0; i < this._flashMats.length; i++) { this._flashMats[i].setProperty('glowParams', this._glowParams); this._flashMats[i].setProperty('glowColor', this._glowColor); }
+        } else {
+            this._glowColor.a = 0;
+            for (let i = 0; i < this._flashMats.length; i++) this._flashMats[i].setProperty('glowColor', this._glowColor);
+        }
+    }
+
+    /** Pulse the purple prayer rim: breathe glowColor.a between GLOW_PULSE_MIN..MAX (called each frame while praying). */
+    private _tickGlow(dt: number): void {
+        if (!this._glowing || !this._flashMats.length) return;
+        this._glowT += dt;
+        const k = GLOW_PULSE_MIN + (GLOW_PULSE_MAX - GLOW_PULSE_MIN) * (0.5 - 0.5 * Math.cos(this._glowT * GLOW_PULSE_W));
+        this._glowColor.a = Math.round(k * 255);
+        for (let i = 0; i < this._flashMats.length; i++) this._flashMats[i].setProperty('glowColor', this._glowColor);
+    }
+
+    /** Play / stop the prayer bubble particles (the authored ParticleSystem2D in the Aku's VFX node, wired via
+     *  `prayerBubbles`). On → ensure active + restart emission; off → stop emitting (existing bubbles float out
+     *  and die). No-op if none is wired. */
+    private _setBubbles(on: boolean): void {
+        const ps = this.prayerBubbles;
+        if (!ps?.isValid) return;
+        if (on) { if (!ps.node.active) ps.node.active = true; ps.resetSystem(); }
+        else ps.stopSystem();
     }
 
     onDestroy(): void {

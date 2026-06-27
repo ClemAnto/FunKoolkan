@@ -1,14 +1,23 @@
-import { _decorator, Component, Vec3, Color, Material, Sprite, tween, Tween } from 'cc';
+import { _decorator, Component, Node, Vec3, Color, Material, Sprite, tween, Tween, Enum } from 'cc';
+import { EDITOR } from 'cc/env';
 
-const { ccclass, property, disallowMultiple, menu } = _decorator;
+const { ccclass, property, disallowMultiple, executeInEditMode, menu } = _decorator;
 
-// ── Idle "sleeping float" — hardcoded feel, scaled by `floatIntensity` (see @property note) ──
-// Slow, slightly irrational periods (seconds) so the loop never visibly repeats; sin(0)=0 on every
-// channel, so the float eases out of the authored pose with no jolt on the first frame.
+/** Koolkan's three life states. The sprite swap + motion are driven off this. */
+export enum KoolkanState {
+    Sleeping,   // dormant: a single STATIC sprite, no motion at all
+    Floating,   // hovering awake-ish in the air — the dreamy float
+    Awaken,     // same float as Floating, but he can ATTACK (attack wiring TBD)
+}
+Enum(KoolkanState);
+
+// ── Idle "float" — hardcoded feel, scaled by `floatIntensity` (see @property note). Used by BOTH
+// Floating and Awaken. Slow, slightly irrational periods (seconds) so the loop never visibly repeats;
+// sin(0)=0 on every channel, so the float eases out of the authored pose with no jolt on frame one. ──
 const BOB_PX     = 16;    // vertical bob amplitude (px) at full intensity
 const DRIFT_PX   = 7;     // horizontal drift amplitude (px)
 const SWAY_DEG   = 2.2;   // rotation sway amplitude (degrees)
-const BREATH_AMP = 0.012; // breathing scale amplitude (±1.2%) — sells "asleep"
+const BREATH_AMP = 0.012; // breathing scale amplitude (±1.2%)
 const W_BOB    = (Math.PI * 2) / 3.2;
 const W_DRIFT  = (Math.PI * 2) / 5.3;
 const W_SWAY   = (Math.PI * 2) / 4.1;
@@ -25,24 +34,46 @@ const FLASH_FALL = 0.3;    // s: flash out
 
 /**
  * Koolkan — the boss (a colossal corrupted moai). Authored in the EDITOR on the node that carries his
- * graphics; this only attaches BEHAVIOUR. Single home for all his future behaviours (shield, wake,
- * attack, takedown); for now it holds just the base IDLE.
+ * graphics; this only attaches BEHAVIOUR.
  *
- * `idle()` makes him drift as if floating in the air, fast asleep: a gentle vertical bob, a slow
- * horizontal sway, a dreamy tilt and a faint breathing pulse — all layered as out-of-phase sines around
- * the pose set in the editor. The authored position/rotation/scale stay authoritative: they are captured
- * once and the float only oscillates AROUND them (and is fully restored by `stopIdle()`).
+ * Three states, one STATIC sprite each (assigned in the inspector):
+ *  • Sleeping — dormant, no motion, static sprite.
+ *  • Floating — drifts as if asleep in mid-air: a gentle vertical bob, a slow horizontal sway, a dreamy
+ *    tilt and a faint breathing pulse — out-of-phase sines layered AROUND the editor pose.
+ *  • Awaken   — identical float, but he is now able to ATTACK (the attack itself is TBD).
+ *
+ * The authored position/rotation/scale stay authoritative: captured once, the float only oscillates
+ * around them, and Sleeping fully restores them.
  */
 @ccclass('Koolkan')
 @disallowMultiple
+@executeInEditMode
 @menu('Boss/Koolkan')
 export class Koolkan extends Component {
-    @property({ tooltip: 'Start floating asleep (idle) automatically when the scene loads.' })
-    idleOnStart = true;
+    @property({ type: Node, tooltip: 'Sprite shown while SLEEPING (static, dormant).' })
+    sleepingSprite: Node | null = null;
+
+    @property({ type: Node, tooltip: 'Sprite shown while FLOATING (hovering asleep).' })
+    floatingSprite: Node | null = null;
+
+    @property({ type: Node, tooltip: 'Sprite shown while AWAKEN (hovering, can attack).' })
+    awakenSprite: Node | null = null;
+
+    @property({
+        type: KoolkanState,
+        tooltip: 'State at scene load. Also previews live in the editor (swaps the visible sprite).',
+    })
+    get startState(): KoolkanState { return this._startState; }
+    set startState(v: KoolkanState) {
+        this._startState = v;
+        if (EDITOR) this._showStateSprite(v);   // live editor preview of the sprite swap
+    }
+    @property
+    private _startState: KoolkanState = KoolkanState.Sleeping;
 
     @property({
         range: [0, 1, 0.01], slider: true,
-        tooltip: 'How much Koolkan drifts while sleeping: 0 = perfectly still, 1 = full bob/sway/breathing.',
+        tooltip: 'How much Koolkan drifts while floating: 0 = perfectly still, 1 = full bob/sway/breathing.',
     })
     floatIntensity = 0.5;
 
@@ -52,7 +83,10 @@ export class Koolkan extends Component {
     })
     hitRecoil = 10;
 
-    private _idling = false;
+    /** Current state at runtime. -1 sentinel so the first setState() always applies. */
+    private _state: KoolkanState = -1 as KoolkanState;
+    /** Whether the float animation is running (Floating or Awaken). */
+    private _floating = false;
     private _t = 0;
     private readonly _basePos = new Vec3();
     private _baseAngle = 0;
@@ -73,34 +107,76 @@ export class Koolkan extends Component {
     private _flashTween: Tween<{ v: number }> | null = null;
 
     onLoad(): void {
-        // Capture the editor-authoritative pose once; the idle float oscillates around it.
+        // Capture the editor-authoritative pose once; the float oscillates around it.
         this._basePos.set(this.node.position);
         this._baseScale.set(this.node.scale);
         this._baseAngle = this.node.angle;
     }
 
     start(): void {
-        if (this.idleOnStart) this.idle();
+        if (EDITOR) return;
+        this.setState(this._startState);
     }
 
-    /** Begin the sleeping float (idempotent). */
-    idle(): void {
-        if (this._idling) return;
-        this._idling = true;
-        this._t = 0;
+    // ── State API ───────────────────────────────────────────────────────────────────────────────────
+    /** Dormant: static sprite, no motion. */
+    sleep(): void { this.setState(KoolkanState.Sleeping); }
+    /** Drift asleep in mid-air. */
+    float(): void { this.setState(KoolkanState.Floating); }
+    /** Awake: same float, now able to attack. */
+    awaken(): void { this.setState(KoolkanState.Awaken); }
+
+    /** True once awake — gate point for the (future) attack logic. */
+    get canAttack(): boolean { return this._state === KoolkanState.Awaken; }
+    get state(): KoolkanState { return this._state; }
+
+    /** Switch state: swap the visible sprite and start/stop the float (idempotent). */
+    setState(state: KoolkanState): void {
+        if (this._state === state) return;
+        this._state = state;
+        this._showStateSprite(state);
+
+        const wasFloating = this._floating;
+        this._floating = state !== KoolkanState.Sleeping;
+        if (this._floating && !wasFloating) {
+            this._t = 0;
+        } else if (!this._floating) {
+            // Sleeping → settle back onto the authored pose (recoil, if any, keeps animating).
+            if (!this._recoiling) {
+                this.node.setPosition(this._basePos);
+                this.node.setScale(this._baseScale);
+                this.node.angle = this._baseAngle;
+            }
+        }
     }
 
-    /** Stop floating and settle back onto the authored pose. */
-    stopIdle(): void {
-        if (!this._idling) return;
-        this._idling = false;
-        this.node.setPosition(this._basePos);
-        this.node.setScale(this._baseScale);
-        this.node.angle = this._baseAngle;
+    /** Activate only the sprite that matches `state`; leave others off. Null/unassigned target → no-op
+     *  (so a missing sprite never blanks Koolkan). */
+    private _showStateSprite(state: KoolkanState): void {
+        const target = this._spriteFor(state);
+        if (!target) {
+            console.warn(`[Koolkan] no sprite assigned for state ${KoolkanState[state]} — visibility unchanged.`);
+            return;
+        }
+        const refs = [this.sleepingSprite, this.floatingSprite, this.awakenSprite];
+        for (let i = 0; i < refs.length; i++) {
+            const n = refs[i];
+            if (n) n.active = n === target;
+        }
     }
 
+    private _spriteFor(state: KoolkanState): Node | null {
+        switch (state) {
+            case KoolkanState.Sleeping: return this.sleepingSprite;
+            case KoolkanState.Floating: return this.floatingSprite;
+            case KoolkanState.Awaken:   return this.awakenSprite;
+            default:                    return null;
+        }
+    }
+
+    // ── Hit reaction ────────────────────────────────────────────────────────────────────────────────
     /** Struck: flash RED (20%) and lurch slightly BACK (up/away from the arena) then spring home — a quick
-     *  recoil layered on the idle float. `strength` (≥0) scales the distance; repeat hits restart both. */
+     *  recoil layered on the float. `strength` (≥0) scales the distance; repeat hits restart both. */
     hit(strength = 1): void {
         this._flashRed();                                  // red wash (always, even with no recoil)
         if (this.hitRecoil <= 0) return;
@@ -114,7 +190,7 @@ export class Koolkan extends Component {
             .call(() => {
                 this._recoiling = false;
                 this._recoil.set(0, 0, 0);
-                if (!this._idling) { this.node.setPosition(this._basePos); this.node.angle = this._baseAngle; this.node.setScale(this._baseScale); }
+                if (!this._floating) { this.node.setPosition(this._basePos); this.node.angle = this._baseAngle; this.node.setScale(this._baseScale); }
             })
             .start();
     }
@@ -134,7 +210,8 @@ export class Koolkan extends Component {
             .start();
     }
 
-    /** Material instances of his sprite(s), gathered once (per-instance so the flash is his alone). */
+    /** Material instances of his sprite(s), gathered once (per-instance so the flash is his alone).
+     *  getComponentsInChildren includes inactive nodes, so all three state sprites are covered. */
     private _gatherFlashMats(): void {
         if (this._flashGathered) return;
         this._flashGathered = true;
@@ -151,9 +228,10 @@ export class Koolkan extends Component {
     }
 
     update(dt: number): void {
-        if (!this._idling && !this._recoiling) return;   // resting and not bouncing → nothing to drive
+        if (EDITOR) return;                                // editor: only the sprite-swap preview, no motion
+        if (!this._floating && !this._recoiling) return;   // sleeping/resting and not bouncing → nothing to drive
         let driftX = 0, bobY = 0, sway = 0, breath = 1;
-        if (this._idling) {
+        if (this._floating) {
             this._t += dt;
             const k = this.floatIntensity < 0 ? 0 : this.floatIntensity > 1 ? 1 : this.floatIntensity;
             driftX = Math.sin(this._t * W_DRIFT + 1.3) * DRIFT_PX * k;

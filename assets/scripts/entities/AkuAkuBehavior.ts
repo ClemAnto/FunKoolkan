@@ -10,8 +10,8 @@ const WANDER_INSET = 120;   // ground px kept from the edges when choosing a fre
 const HIT_COOLDOWN = 0.5;   // s of immunity after a hit so one bump = one hit (not a burst of contacts)
 const ORANGE = new Color(255, 170, 60, 255);
 
-/** AI state. The visual phase (idle/dance/move/hit) lives in AkuAku; this is the higher-level intent. */
-enum Ai { Off, ToZone, Settling, Dancing }
+/** AI state. The visual phase (idle/pray/move/hit) lives in AkuAku; this is the higher-level intent. */
+enum Ai { Off, ToZone, Settling, Praying }
 
 /**
  * The Aku-aku "brain": drives the AkuAku entity (which owns the look + physics) through its behaviour loop.
@@ -19,7 +19,7 @@ enum Ai { Off, ToZone, Settling, Dancing }
  *
  *   1) pick a FREE zone of the arena (clear of the other Aku-aku + stones),
  *   2) hop there (~`moveHops` hops, facing the travel direction),
- *   3) after `danceDelay` s, start the wake dance,
+ *   3) after `danceDelay` s, start the wake ritual (prayer: purple inner glow + rising bubbles),
  *   4) a moving rune hits it → −1 HP + small hop + orange flash → back to step 1,
  *   5) shoved onto/over the arena edge → eliminated (kicked out of the stadium),
  *   6) HP reaches 0 → same elimination as step 5.
@@ -29,7 +29,7 @@ enum Ai { Off, ToZone, Settling, Dancing }
 @requireComponent(AkuAku)
 @menu('Enemies/AkuAkuBehavior')
 export class AkuAkuBehavior extends Component {
-    @property({ type: CCFloat, tooltip: 'Seconds resting on a free zone before the wake dance starts.' })
+    @property({ type: CCFloat, tooltip: 'Seconds resting on a free zone before the wake ritual (prayer) starts.' })
     danceDelay = 2;
     @property({ type: CCInteger, formerlySerializedAs: 'maxHits', tooltip: 'Hit points: each rune hit removes 1; at 0 the Aku-aku is eliminated (kicked out of the stadium).' })
     hp = 1;
@@ -79,11 +79,11 @@ export class AkuAkuBehavior extends Component {
         if (this._cooldown > 0) this._cooldown -= dt;
         // pushed onto / past the arena edge while parked → off the cliff (step 5). Only when settled/dancing,
         // so it never self-eliminates while hopping out of the hole or travelling to a zone.
-        if ((this._state === Ai.Settling || this._state === Ai.Dancing) && aku.nearEdge()) { this._eliminate(aku.groundX >= 0 ? 1 : -1); return; }   // fly off toward the edge it was shoved to
+        if ((this._state === Ai.Settling || this._state === Ai.Praying) && aku.nearEdge()) { this._eliminate(aku.groundX >= 0 ? 1 : -1); return; }   // fly off toward the edge it was shoved to
         if (this._impact) { this._impact = false; this._onHit(); return; }
         if (this._state === Ai.Settling) {
             this._timer -= dt;
-            if (this._timer <= 0) { aku.dance(); this._state = Ai.Dancing; }   // step 3
+            if (this._timer <= 0) { aku.pray(); this._state = Ai.Praying; }   // step 3: the wake ritual (purple glow + bubbles)
         }
     }
 

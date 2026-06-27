@@ -1,7 +1,12 @@
-// Sprite flash effect — builtin-sprite (for2d) + a flashColor/flashAmount mix toward a colour, alpha kept.
-// At flashAmount = 0 it renders identically to the default sprite shader (mix(rgb, flash, 0) = rgb).
-// Drive flashAmount 0->1->0 from script for a full-white "hit flash" that works on any background, because
-// mix() forces rgb toward flashColor regardless of the texture's own colour (a multiply tint cannot).
+// Sprite flash + outer-glow effect — builtin-sprite (for2d), with two independent FX driven from script:
+//   • flashColor (.rgb colour, .a amount): mix the sprite's pixels toward a colour (a white "hit flash" that
+//     works on any background — a multiply tint can't whiten). flashColor.a = 0 → identical to the stock shader.
+//   • glowColor (.rgb colour, .a intensity) + glowParams: a FEATHERED INNER GLOW — a soft rim that glows along
+//     the INSIDE of the sprite's silhouette and fades toward the centre, by eroding the texture's alpha (sampling
+//     neighbouring texels for transparency). Stays INSIDE the quad → no clipping, NO texture padding needed.
+//     glowColor.a = 0 → the whole glow block is skipped (the runes etc. pay nothing). Drive .a 0->1 to fade in.
+// NOTE: the sprite must have some transparency around its silhouette for the rim to read (any normal cut-out art
+// does). Avoid a packed atlas for the glowing sprites (UV offsets would sample neighbours): standalone PNG.
 CCEffect %{
   techniques:
   - passes:
@@ -22,6 +27,8 @@ CCEffect %{
         alphaThreshold: { value: 0.5 }
         flashColor: { value: [1, 1, 1, 0], editor: { type: color } }   # .rgb = flash colour, .a = amount (0 = off)
         fxParams: { value: [0, 0, 0, 0] }   # .x = hue rotation (radians, 0 = off); rest reserved
+        glowColor: { value: [1, 1, 1, 0], editor: { type: color } }   # .rgb = inner-glow colour, .a = intensity (0 = off)
+        glowParams: { value: [0, 0, 1, 2] }   # .xy = inner-rim depth in UV (per axis), .z = falloff exponent, .w = quality (0 low .. 3 ultra)
 }%
 
 CCProgram sprite-vs %{
@@ -81,6 +88,8 @@ CCProgram sprite-fs %{
   uniform FlashConstant {
     vec4 flashColor;   // .rgb = flash colour, .a = amount — packed in ONE vec4 to dodge std140 lone-float misalign
     vec4 fxParams;     // .x = hue rotation (radians); rest reserved — vec4 (not a lone float) for the same reason
+    vec4 glowColor;    // .rgb = inner-glow colour, .a = intensity (0 = glow off)
+    vec4 glowParams;   // .xy = inner-rim depth in UV (per axis), .z = falloff exponent, .w = quality (0..3)
   };
 
   // Rotate a colour's HUE by `a` radians: a Rodrigues rotation about the grey axis (1,1,1), which leaves
@@ -103,6 +112,41 @@ CCProgram sprite-fs %{
     #endif
 
     o *= color;
+
+    // ── Feathered INNER GLOW: glow the INSIDE of the silhouette edge, fading toward the centre. For each opaque
+    //    fragment we sample rings of neighbours and look for TRANSPARENCY (erosion): a fragment near the edge has
+    //    transparent neighbours close by (strong glow), a deep-interior one has none (no glow). Stays entirely
+    //    INSIDE the quad → no clipping, no texture padding needed. Gated on glowColor.a so non-glowing sprites
+    //    (runes, idle Aku, …) skip the whole sampling loop; alpha is left untouched (no halo outside). ──
+    #if USE_TEXTURE
+    if (glowColor.a > 0.0 && o.a > 0.0039) {
+      // Quality (glowParams.w, 0..3) picks how many rings × directions we sample — fewer = cheaper, coarser.
+      // Loops keep CONSTANT max bounds (WebGL-safe) and break early to the active counts.
+      float q = glowParams.w;
+      int RINGS = q < 0.5 ? 2 : (q < 1.5 ? 3 : (q < 2.5 ? 4 : 5));
+      int DIRS  = q < 0.5 ? 6 : (q < 1.5 ? 8 : (q < 2.5 ? 12 : 16));
+      const int MAX_RINGS = 5;
+      const int MAX_DIRS  = 16;
+      float g = 0.0;
+      for (int r = 1; r <= MAX_RINGS; r++) {
+        if (r > RINGS) break;
+        float rf = float(r) / float(RINGS);             // 0 .. 1 (ring radius fraction)
+        float w  = 1.0 - 0.7 * rf;                       // closer transparency weighs more → the rim fades inward
+        vec2 rad = glowParams.xy * rf;
+        for (int i = 0; i < MAX_DIRS; i++) {
+          if (i >= DIRS) break;
+          float ang = 6.2831853 * (float(i) / float(DIRS));
+          vec2 off  = vec2(cos(ang), sin(ang)) * rad;
+          float sa  = CCSampleWithAlphaSeparated(cc_spriteTexture, uv0 + off).a;
+          g = max(g, (1.0 - sa) * w);                    // erosion: strongest where a transparent edge is nearest
+        }
+      }
+      g = pow(clamp(g, 0.0, 1.0), max(0.0001, glowParams.z));        // shape the falloff
+      float rim = g * clamp(glowColor.a, 0.0, 1.0) * o.a;            // only INSIDE the art (× o.a), rim fades inward
+      o.rgb = mix(o.rgb, glowColor.rgb, rim);                        // glow the inner edge; alpha untouched
+    }
+    #endif
+
     ALPHA_TEST(o);
     if (fxParams.x != 0.0) o.rgb = clamp(hueRotate(o.rgb, fxParams.x), 0.0, 1.0);   // hue shift (keeps shading)
     o.rgb = mix(o.rgb, flashColor.rgb, clamp(flashColor.a, 0.0, 1.0));   // hit flash (amount in .a), alpha untouched
