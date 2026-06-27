@@ -109,6 +109,11 @@ export class ManaLightning extends Component {
     private _bolts: Bolt[] = [];                  // all arcs currently animating
     private _warned = false;
 
+    // The most-recently-enabled instance — so runtime-spawned effects (e.g. the Overpower shot, which has no
+    // editor wiring) can reach a fully-configured ManaLightning without an @property reference.
+    private static _inst: ManaLightning | null = null;
+    static get instance(): ManaLightning | null { return ManaLightning._inst; }
+
     onLoad(): void {
         const root = new Node('ManaLightningFX');
         root.layer = this.node.layer;
@@ -116,6 +121,9 @@ export class ManaLightning extends Component {
         root.setPosition(0, 0, 0);
         this._root = root;
     }
+
+    onEnable(): void { ManaLightning._inst = this; }
+    onDisable(): void { if (ManaLightning._inst === this) ManaLightning._inst = null; }
 
     start(): void {
         if (this.autoTestSeconds > 0) this.schedule(() => this.strike(), this.autoTestSeconds);

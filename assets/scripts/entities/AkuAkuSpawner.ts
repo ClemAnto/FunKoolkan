@@ -5,6 +5,7 @@ import { AkuAkuBehavior } from './AkuAkuBehavior';
 import { Column } from './Column';
 import { PrayerSpirit } from './PrayerSpirit';
 import { unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
+import { GameMode } from '../config/GameMode';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
 
@@ -63,7 +64,7 @@ export class AkuAkuSpawner extends Component {
     private readonly _pool = new NodePool();
 
     start(): void {
-        this._running = this.autoStart;
+        this._running = this.autoStart && !GameMode.stickyPrototype;   // sticky prototype: no Aku-aku
         this._timer = this.spawnInterval;   // first one pops out after a full interval
     }
 

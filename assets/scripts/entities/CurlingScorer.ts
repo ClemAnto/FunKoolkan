@@ -4,6 +4,7 @@ import { ManaLightning } from './ManaLightning';
 import { RaisingStar } from './RaisingStar';
 import { Stone } from './Stone';
 import { Glue } from './Glue';
+import { GameMode } from '../config/GameMode';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
 
@@ -66,6 +67,7 @@ export class CurlingScorer extends Component {
     }
 
     update(dt: number): void {
+        if (GameMode.stickyPrototype) return;   // sticky-blob prototype: no tee/house scoring (Overpower replaces it)
         if (!this.house || !this.discharge) return;
         this.house.collectStonesOnTee(this._onTee);
 

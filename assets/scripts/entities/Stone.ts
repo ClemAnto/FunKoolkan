@@ -4,6 +4,7 @@ import { DebugDraw } from '../config/DebugDraw';
 import { Rune } from './Rune';
 import { Glue } from './Glue';
 import { Bomb } from './Bomb';
+import { Overpower } from './Overpower';
 
 const { ccclass } = _decorator;
 const _v = new Vec3();
@@ -404,6 +405,7 @@ export class Stone extends Component {
         viewScale?: number;
         gemType?: number;     // gem type to show on the rune (Rune.setType)
         isBomb?: boolean;     // MAX-charge launch → a bomb (explodes on contact) instead of a sticky rune
+        isOverpower?: boolean;   // overcharge launch (sticky prototype) → an OVERPOWER shot (detonates a same-colour cluster) instead of a sticky rune
         name?: string;
     }): Node {
         const body = new Node(o.name ?? 'Stone');
@@ -436,6 +438,11 @@ export class Stone extends Component {
         // stone that hits a matching anchor bonds into the soft mana structure. Both composable behaviours.
         if (o.isBomb) {
             body.addComponent(Bomb).radius = o.radius;
+        } else if (o.isOverpower) {
+            const glue = body.addComponent(Glue);   // an overpower rune sticks/compacts like any other…
+            glue.gemType = o.gemType ?? 0;
+            glue.radius = o.radius;
+            body.addComponent(Overpower).radius = o.radius;   // …then, once it settles, detonates its OWN-colour cluster
         } else {
             const glue = body.addComponent(Glue);
             glue.gemType = o.gemType ?? 0;

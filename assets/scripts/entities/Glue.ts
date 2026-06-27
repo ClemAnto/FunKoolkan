@@ -4,6 +4,7 @@ import { Stone } from './Stone';
 import { StoneExplosion } from './StoneExplosion';
 import { projectX, projectY, sizeXFactor } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
+import { GameMode } from '../config/GameMode';
 
 const { ccclass, property } = _decorator;
 
@@ -11,6 +12,12 @@ const _force = new Vec2();
 const CONTACT_GAP = 3;        // surface-surface ground px: a stone counts as "touching" an anchor at/under this → bond
 const MAX_BONDS = 4;          // a stone may bond to up to this many anchors at once (a mesh, not just a chain)
 const SCOSSA_GAP = 3;         // surface-surface ground px at/under which two structures count as "touching" → discharge
+// Sticky-prototype COMPACTION MAGNET (SuperSlide15 model: gentle pull at a distance, ZERO at contact → no jitter).
+// A rune is drawn toward any near, not-yet-touching rune so the whole blob huddles itself tight (edges meet);
+// the instant they touch the magnet stops and a bond forms. Tunable feel.
+const STICKY_MAGNET_REACH = 1.5;   // magnet reaches this × the rune's radius (edge-to-edge) toward a neighbour
+const STICKY_MAGNET_FORCE = 150;   // peak pull (when nearly touching), easing to 0 at the reach edge; same force
+                                   // scale as a bond spring (cohesion×distance ≈ hundreds). 0 = magnet off. MAIN KNOB.
 
 /** One elastic bond: an anchor + the stone's ORIGINAL offset from it (the rest position) + the break length. */
 interface Bond { anchor: Glue; ox: number; oy: number; maxLen: number; }
@@ -58,6 +65,7 @@ export class Glue extends Component {
     onLoad(): void {
         this._pole = this.getComponent(Pole);
         if (this._pole) { this.isAnchor = true; this.gemType = -1; this.radius = this._pole.radius; }
+        else if (GameMode.stickyPrototype) this.isAnchor = true;   // every rune is a permanent sticky anchor (universal gluing)
     }
     onEnable(): void { Glue._all.push(this); if (this.showDebug) Glue.debugAll = true; }
     onDisable(): void {
@@ -81,8 +89,63 @@ export class Glue extends Component {
     private _bondedTo(a: Glue): boolean { for (const b of this._bonds) if (b.anchor === a) return true; return false; }
 
     update(): void {
-        if (!this._pole) this._updateBonds();   // poles are passive anchors; stones bond + are reeled in
+        if (!this._pole) {                       // poles are passive anchors; stones bond + are reeled in
+            if (GameMode.stickyPrototype) this._updateBondsSticky();
+            else this._updateBonds();
+        }
         if (Glue.debugAll || DebugDraw.enabled) this._drawDebug(); else if (this._dbg?.isValid) this._dbg.clear();
+    }
+
+    /** STICKY PROTOTYPE (GameMode.stickyPrototype): every rune is a permanent anchor and sticks to ANY rune it
+     *  touches — TYPE-AGNOSTIC — so the whole field fuses into one soft blob. No pole rooting and no
+     *  auto-discharge: the OVERPOWER shot (see Overpower.ts) detonates same-colour clusters instead.
+     *
+     *  Two cooperating forces, in ONE pass over the anchors:
+     *   - COMPACTION MAGNET: a gentle pull toward each NEAR, not-yet-touching rune (force eases to 0 right at
+     *     contact → no jitter) so the blob keeps huddling itself tight, closing the gaps between runes.
+     *   - BONDS: the instant two runes touch, a spring bond forms that holds them at touching (rest shape +
+     *     angle), snapping past maxStretch. */
+    private _updateBondsSticky(): void {
+        const rb = this._body();
+        if (!rb) return;
+        if (this._freeDamping < 0) this._freeDamping = rb.linearDamping;
+
+        const magnetReach = this.radius * STICKY_MAGNET_REACH;
+        let mfx = 0, mfy = 0;   // compaction-magnet force toward near runes (the blob hugging itself together)
+        for (let i = 0; i < Glue._all.length; i++) {
+            const a = Glue._all[i];
+            if (a === this || !a.isAnchor) continue;
+            const gap = this._gapTo(a);
+            if (gap <= CONTACT_GAP) {
+                // touching → bond (up to MAX_BONDS); no magnet here (avoids the contact jitter)
+                if (this._bonds.length < MAX_BONDS && !this._bondedTo(a)) {
+                    const dx0 = this._gx() - a._gx(), dy0 = this._gy() - a._gy(), len0 = Math.hypot(dx0, dy0) || 1;
+                    const minLen = this.radius + a.radius;   // rest = touching, at the angle of first contact
+                    this._bonds.push({ anchor: a, ox: dx0 / len0 * minLen, oy: dy0 / len0 * minLen,
+                                       maxLen: minLen * Math.max(1.05, this.maxStretch) });
+                }
+            } else if (STICKY_MAGNET_FORCE > 0 && gap <= magnetReach && !this._bondedTo(a)) {
+                // near but not yet touching → gentle pull (stronger as it nears) so the blob compacts itself
+                const dx = a._gx() - this._gx(), dy = a._gy() - this._gy(), d = Math.hypot(dx, dy) || 1;
+                const k = STICKY_MAGNET_FORCE * (1 - gap / magnetReach);
+                mfx += dx / d * k; mfy += dy / d * k;
+            }
+        }
+
+        // each bond is a spring toward the spot the stone HAD relative to that anchor; drop dead/snapped bonds
+        let fx = mfx, fy = mfy;
+        for (let i = this._bonds.length - 1; i >= 0; i--) {
+            const b = this._bonds[i];
+            if (!b.anchor.isValid || !b.anchor.isAnchor) { this._bonds.splice(i, 1); continue; }
+            const ax = b.anchor._gx(), ay = b.anchor._gy();
+            if (Math.hypot(ax - this._gx(), ay - this._gy()) > b.maxLen) { this._bonds.splice(i, 1); continue; }   // snapped
+            fx += this.cohesion * (ax + b.ox - this._gx());
+            fy += this.cohesion * (ay + b.oy - this._gy());
+        }
+
+        rb.linearDamping = this._bonds.length > 0 ? this._bondedDamping() : this._freeDamping;   // stiff while stuck, free in flight
+        if (fx !== 0 || fy !== 0) rb.applyForceToCenter(_force.set(fx, fy), true);
+        // isAnchor stays true (set at spawn) → this rune is always a sticky target, even with zero bonds
     }
 
     private _updateBonds(): void {
@@ -135,6 +198,7 @@ export class Glue extends Component {
 
     /** Once per frame (guarded), regardless of how many glues call it. */
     lateUpdate(): void {
+        if (GameMode.stickyPrototype) return;   // sticky prototype: no pole-circuit solve / auto-discharge (Overpower handles detonation)
         const f = director.getTotalFrames();
         if (f === Glue._solvedFrame) return;
         Glue._solvedFrame = f;

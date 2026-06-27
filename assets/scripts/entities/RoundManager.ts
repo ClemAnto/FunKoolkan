@@ -9,6 +9,7 @@ import { EndPanel } from '../managers/EndPanel';
 import { PrayerSpirit } from './PrayerSpirit';
 import { RuneKind } from '../config/RuneTypes';
 import { EditState } from '../config/EditState';
+import { GameMode } from '../config/GameMode';
 
 const { ccclass, property } = _decorator;
 
@@ -93,8 +94,8 @@ export class RoundManager extends Component {
     }
 
     start(): void {
-        this.resetGame();
-        if (AUTO_START) this.startRound();
+        this.resetGame();   // sticky prototype: just empty the columns; no rounds / Aku / Koolkan loop
+        if (AUTO_START && !GameMode.stickyPrototype) this.startRound();
     }
 
     /** Full reset to pre-game state: empty every column (and any other per-round element). */
@@ -162,7 +163,7 @@ export class RoundManager extends Component {
     }
 
     update(dt: number): void {
-        if (EDITOR || this._over || this._round <= 0) return;
+        if (EDITOR || GameMode.stickyPrototype || this._over || this._round <= 0) return;
         this._tickStarvation(dt);                          // anti-stall: empty house for too long → game over
         if (this._roundReady) this._checkRoundCleared();   // all columns empty → level passed (off during clear→fill)
         // Aku-on-column refill

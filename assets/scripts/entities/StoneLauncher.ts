@@ -5,6 +5,7 @@ import { ArenaBounds } from './ArenaBounds';
 import { RUNES } from '../config/RuneTypes';
 import { projectX, projectY, sizeXFactor, sizeYFactor, unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
+import { GameMode } from '../config/GameMode';
 
 const { ccclass, property } = _decorator;
 
@@ -38,8 +39,8 @@ const LAUNCH_FLASH = 0.5;      // white amount (0..1) the launch flash reaches
 const LAUNCH_DROP_PX = 10;     // loaded stone drops this many px (screen) as it departs the launcher
 const LAUNCH_DROP_TIME = 0.1;  // duration of the loaded stone's drop + whiten on fire (reload waits this long)
 const FIRED_FLASH_TIME = 0.15; // fired stone fades from half white back to normal over this
-// TEMP: bomb-rune overcharge is disabled for now — pulling past full power launches a normal stone and shows no
-// charge cue. Flip back to true to restore the bomb (spawn + red throb + vibration + indicator + gauge hue).
+// Legacy (curling core) bomb-overcharge gate: pulling past full power launches a bomb + shows the charge cue.
+// In the sticky prototype the overcharge is ALWAYS on (it fires an OVERPOWER shot instead) — see _overchargeOn().
 const BOMB_OVERCHARGE_ENABLED = false;
 const BOMB_FLASH_COLOR = new Color(255, 40, 40, 255);   // red the bomb-charge flash washes the stone toward (loaded + fired)
 const BOMB_FLASH_BASE = 0.30;  // midpoint flash amount of the throbbing bomb-charge red (0..1)
@@ -444,6 +445,10 @@ export class StoneLauncher extends Component {
         return this._loadPhase === 0 && !!this._loadedRune?.node?.isValid;
     }
 
+    /** Whether pulling past full power arms an overcharged shot: always in the sticky prototype (→ OVERPOWER),
+     *  else the legacy bomb gate. */
+    private _overchargeOn(): boolean { return GameMode.stickyPrototype || BOMB_OVERCHARGE_ENABLED; }
+
     /** True if a UI point lands on the launcher's hit box (its UITransform). The launcher arms only
      *  when the first touch is on it — mirrors NextPreview.containsUIPoint (UI-world AABB test). */
     private _hitLauncher(uiX: number, uiY: number): boolean {
@@ -464,7 +469,9 @@ export class StoneLauncher extends Component {
         const len = this._dragLen(pull);
         if (len < this.minDrag || pull.y > 0) return;   // too short, or pulled ABOVE the launcher → invalid, no launch
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
-        const isBomb = BOMB_OVERCHARGE_ENABLED && len >= this.maxDrag * this.bombDragFactor;   // pulled PAST full power into the overcharge zone → bomb (disabled for now)
+        const overcharged = this._overchargeOn() && len >= this.maxDrag * this.bombDragFactor;   // pulled PAST full power into the overcharge zone
+        const isOverpower = overcharged && GameMode.stickyPrototype;   // sticky prototype: overcharge fires an OVERPOWER shot…
+        const isBomb = overcharged && !GameMode.stickyPrototype;       // …else (legacy curling core) it fires a bomb
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull (visual dir)
         const dir = this._groundDir(eff.x, eff.y);     // unit ground direction
         const spawn = this._spawnFrom(dir.x, dir.y);   // just outside the launcher body, along the shot
@@ -482,10 +489,11 @@ export class StoneLauncher extends Component {
             linearDamping: this.stoneDamping,
             gemType: this._loadedType,
             isBomb,
-            name: isBomb ? 'BombStone' : 'LaunchedStone',
+            isOverpower,
+            name: isBomb ? 'BombStone' : isOverpower ? 'OverpowerStone' : 'LaunchedStone',
         });
         const firedStone = fired.getComponent(Stone);
-        if (isBomb) firedStone?.flashPulse(BOMB_FLASH_COLOR, BOMB_FLASH_BASE, BOMB_FLASH_AMP, BOMB_FLASH_FREQ);   // a bomb KEEPS a throbbing red
+        if (isBomb || isOverpower) firedStone?.flashPulse(BOMB_FLASH_COLOR, BOMB_FLASH_BASE, BOMB_FLASH_AMP, BOMB_FLASH_FREQ);   // a charged shot (bomb/overpower) KEEPS a throbbing red
         else firedStone?.flashFrom(LAUNCH_WHITE, LAUNCH_FLASH, FIRED_FLASH_TIME);   // normal shot: half white, fades to normal
 
         // Loaded stone DEPARTS: drop a few px + wash to half white over LAUNCH_DROP_TIME, THEN reload (the
@@ -552,7 +560,7 @@ export class StoneLauncher extends Component {
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull
         this._armTarget = -Math.atan2(eff.x, eff.y) * 180 / Math.PI * this.bowFollowFactor;
         this._trajTargetAlpha = 1;                    // valid → update() eases arm + dots back in (symmetric transition)
-        this._bombCharged = BOMB_OVERCHARGE_ENABLED && len >= this.maxDrag * this.bombDragFactor;   // bomb-overcharge zone (disabled for now → cue stays off)
+        this._bombCharged = this._overchargeOn() && len >= this.maxDrag * this.bombDragFactor;   // overcharge zone → bomb (legacy) or OVERPOWER (sticky prototype): show the charge cue
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
         this._gauge = power; this._setGaugePower(power);   // follows the drag directly while aiming
         const d0 = this._groundDir(eff.x, eff.y);

@@ -2,6 +2,7 @@ import { _decorator, Component, RigidBody2D, ERigidBody2DType } from 'cc';
 import { House } from './House';
 import { ArenaBounds } from './ArenaBounds';
 import { Stone } from './Stone';
+import { GameMode } from '../config/GameMode';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
 
@@ -47,6 +48,7 @@ export class Petrifier extends Component {
     }
 
     update(dt: number): void {
+        if (GameMode.stickyPrototype) return;   // sticky-blob prototype: no petrification
         if (!this.house) return;
         const maxSqr = this.restSpeed * this.restSpeed;
         const warnAt = this.petrifyDelay - this.warnLead;
