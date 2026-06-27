@@ -89,6 +89,23 @@ export class House extends Component {
     /** Stones whose projected footprint overlaps the TEE. Fills `out` (cleared first). */
     collectStonesOnTee(out: Stone[]): void { this._collect(this._tee, out); }
 
+    /** Whether any live stone currently overlaps the TEE (same projected-footprint test). The TeeBeacon
+     *  reads this to hold the tee lit steady while a stone sits on it. Allocation-free (early-out, no array). */
+    isTeeOccupied(): boolean {
+        const zone = this._tee;
+        if (zone.rx <= 0 || zone.ry <= 0) return false;
+        const stones = Stone.all;
+        for (let i = 0; i < stones.length; i++) {
+            const st = stones[i];
+            if (!st.node?.isValid) continue;
+            const p = st.node.position;                          // ground space
+            const svx = projectX(p.x, p.y), svy = projectY(p.y); // → arena-local visual
+            const srx = st.radius * sizeXFactor(p.y), sry = st.radius * sizeYFactor(p.y);
+            if (this._overlaps(zone, svx, svy, srx, sry)) return true;
+        }
+        return false;
+    }
+
     /** Shared query for the curling scoring: every live stone whose on-screen ellipse overlaps `zone`
      *  (same projected-position test as the debug detection). Zones are refreshed each frame in update(). */
     private _collect(zone: Zone, out: Stone[]): void {

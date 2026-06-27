@@ -16,9 +16,9 @@ export enum RuneKind {
     Green = 0,
     Yellow = 1,
     Red = 2,
-    Turquoise = 3,
+    Blue = 3,
     Purple = 4,
-    Amber = 5,
+    Cyan = 5,
 }
 
 /**
@@ -32,12 +32,12 @@ export enum RuneKind {
  * difficulty ramp (GDD §13 — number of colours per round).
  */
 export const RUNES: readonly RuneType[] = [
-    { id: 0, name: 'green',     color: new Color(90, 210, 90) },
-    { id: 1, name: 'yellow',    color: new Color(245, 210, 70) },
-    { id: 2, name: 'red',       color: new Color(235, 80, 80) },
-    { id: 3, name: 'turquoise', color: new Color(60, 205, 220) },
-    { id: 4, name: 'purple',    color: new Color(180, 110, 235) },
-    { id: 5, name: 'amber',     color: new Color(245, 150, 55) },
+    { id: 0, name: 'green',  color: new Color(90, 210, 90) },
+    { id: 1, name: 'yellow', color: new Color(245, 210, 70) },
+    { id: 2, name: 'red',    color: new Color(235, 80, 80) },
+    { id: 3, name: 'blue',   color: new Color(70, 130, 240) },
+    { id: 4, name: 'purple', color: new Color(180, 110, 235) },
+    { id: 5, name: 'cyan',   color: new Color(70, 215, 230) },
 ];
 
 /** Total number of rune types defined. */

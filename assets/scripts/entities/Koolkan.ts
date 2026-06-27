@@ -23,14 +23,24 @@ const W_DRIFT  = (Math.PI * 2) / 5.3;
 const W_SWAY   = (Math.PI * 2) / 4.1;
 const W_BREATH = (Math.PI * 2) / 2.6;
 
+// On waking (Sleeping → Floating) Koolkan rises softly by this much, then keeps floating around the raised spot.
+const FLOAT_RISE   = 30;   // px risen when he wakes
+const FLOAT_RISE_T = 0.6;  // s of the soft rise
+const SLEEP_FALL_T = 0.55; // s of the fall back down (quick drop + a few gummy bounces via bounceOut)
+const SLEEP_SHAKE_AMP = 12; // px the frame jitters when he slams down to sleep
+const SLEEP_SHAKE_T   = 0.35; // s of the frame shake
+
 // ── Hit recoil — a quick lurch BACK (up/away) then a springy return (layered over the idle float) ──
 const RECOIL_OUT  = 0.07;  // s: punch back
 const RECOIL_BACK = 0.52;  // s: spring home (backOut → a slight overshoot = the bounce)
 
-// ── Hit flash — a brief RED wash (mix toward red, peaking at 20%) via the SpriteFlash material ──
-const FLASH_PEAK = 0.2;    // peak amount (mix toward red): 20%
+// ── Flash wash (mix toward a colour, peaking at 20%) via the SpriteFlash material: RED on a hit, PURPLE when
+//    absorbing a prayer spirit. ──
+const FLASH_PEAK = 0.2;    // peak amount (mix toward the colour): 20%
 const FLASH_RISE = 0.05;   // s: flash in
 const FLASH_FALL = 0.3;    // s: flash out
+const HIT_RED      = new Color(255, 0, 0, 255);     // struck-by-rune wash
+const ENERGY_PURPLE = new Color(170, 80, 255, 255); // prayer-spirit absorb wash
 
 /**
  * Koolkan — the boss (a colossal corrupted moai). Authored in the EDITOR on the node that carries his
@@ -59,6 +69,9 @@ export class Koolkan extends Component {
     @property({ type: Node, tooltip: 'Sprite shown while AWAKEN (hovering, can attack).' })
     awakenSprite: Node | null = null;
 
+    @property({ type: Node, tooltip: 'Node to shake when he slams down to sleep (the "frame" — e.g. the Camera or a content root). Empty = no shake.' })
+    shakeTarget: Node | null = null;
+
     @property({
         type: KoolkanState,
         tooltip: 'State at scene load. Also previews live in the editor (swaps the visible sprite).',
@@ -83,8 +96,16 @@ export class Koolkan extends Component {
     })
     hitRecoil = 10;
 
+    @property({
+        range: [1, 20, 1], slider: true,
+        tooltip: 'Energy (prayer spirits absorbed) needed to wake up: Sleeping → Floating.',
+    })
+    wakeEnergy = 5;
+
     /** Current state at runtime. -1 sentinel so the first setState() always applies. */
     private _state: KoolkanState = -1 as KoolkanState;
+    /** Accumulated energy from prayer spirits; reaching `wakeEnergy` wakes him (Sleeping → Floating). */
+    private _energy = 0;
     /** Whether the float animation is running (Floating or Awaken). */
     private _floating = false;
     private _t = 0;
@@ -97,6 +118,11 @@ export class Koolkan extends Component {
     private _recoiling = false;
     private _recoilTween: Tween<Vec3> | null = null;
 
+    /** Vertical offset (px above the base pose): rises on wake, falls on sleep. 0 once settled on the altar. */
+    private readonly _rise = { v: 0 };
+    private _riseTween: Tween<{ v: number }> | null = null;
+    private _falling = false;   // true during the quick fall back to sleep → keeps update() composing the drop
+
     /** Hit flash: the sprite material INSTANCES (SpriteFlash effect) + a 0→0.2→0 amount tween — washes
      *  Koolkan RED on a strike. The effect packs colour AND amount into ONE vec4 `flashColor` (.rgb = red,
      *  .a = amount), so we drive that single uniform. Needs the SpriteFlash material on his sprite. */
@@ -105,6 +131,7 @@ export class Koolkan extends Component {
     private readonly _flashColor = new Color(255, 0, 0, 0);   // red; .a carries the amount (0 at rest)
     private readonly _flashT = { v: 0 };
     private _flashTween: Tween<{ v: number }> | null = null;
+    private readonly _glowOff = new Color(255, 255, 255, 0);  // glowColor with .a=0 → kills any inner glow
 
     onLoad(): void {
         // Capture the editor-authoritative pose once; the float oscillates around it.
@@ -140,12 +167,26 @@ export class Koolkan extends Component {
         this._floating = state !== KoolkanState.Sleeping;
         if (this._floating && !wasFloating) {
             this._t = 0;
+            this._riseTween?.stop();                 // wake: rise softly by FLOAT_RISE, then float around the raised spot
+            this._rise.v = 0;
+            this._riseTween = tween(this._rise).to(FLOAT_RISE_T, { v: FLOAT_RISE }, { easing: 'sineOut' }).start();
+            this._killGlow();                        // no inner glow once awake/floating
         } else if (!this._floating) {
-            // Sleeping → settle back onto the authored pose (recoil, if any, keeps animating).
+            this._energy = 0;   // back to sleep (e.g. round reset) → energy gauge resets
+            this._riseTween?.stop();
             if (!this._recoiling) {
-                this.node.setPosition(this._basePos);
-                this.node.setScale(this._baseScale);
+                // Quick FALL back to the altar: capture the current height into _rise, then ease it to 0.
+                this._rise.v = this.node.position.y - this._basePos.y;
                 this.node.angle = this._baseAngle;
+                this.node.setScale(this._baseScale);
+                this._falling = true;
+                this._riseTween = tween(this._rise)
+                    .to(SLEEP_FALL_T, { v: 0 }, { easing: 'bounceOut' })   // drop + a few gummy bounces on the altar
+                    .call(() => { this._falling = false; this._rise.v = 0; this.node.setPosition(this._basePos); this.node.angle = this._baseAngle; this.node.setScale(this._baseScale); })
+                    .start();
+                this._shake();   // slam → shake the frame
+            } else {
+                this._rise.v = 0;   // a recoil owns the position right now; just clear the rise
             }
         }
     }
@@ -178,7 +219,28 @@ export class Koolkan extends Component {
     /** Struck: flash RED (20%) and lurch slightly BACK (up/away from the arena) then spring home — a quick
      *  recoil layered on the float. `strength` (≥0) scales the distance; repeat hits restart both. */
     hit(strength = 1): void {
-        this._flashRed();                                  // red wash (always, even with no recoil)
+        this._flash(HIT_RED);            // red wash (always, even with no recoil)
+        this._recoilBack(strength);
+    }
+
+    /** Current energy and whether awake (past Sleeping). */
+    get energy(): number { return this._energy; }
+
+    /** Absorb a prayer spirit: +`amount` energy with a PURPLE wash + a little recoil; once it reaches
+     *  `wakeEnergy` while still Sleeping, he WAKES (Sleeping → Floating). */
+    addEnergy(amount = 1): void {
+        this._energy += amount;
+        this._flash(ENERGY_PURPLE);
+        this._recoilBack(0.6);
+        console.log(`[Koolkan] +${amount} energy → ${this._energy}/${this.wakeEnergy}`);
+        if (this._energy >= this.wakeEnergy && this._state === KoolkanState.Sleeping) {
+            console.log('[Koolkan] energy full — WAKING UP (Sleeping → Floating)');
+            this.float();
+        }
+    }
+
+    /** A quick lurch BACK (up/away) then a springy return, layered over the float. `strength` scales it. */
+    private _recoilBack(strength: number): void {
         if (this.hitRecoil <= 0) return;
         const back = this.hitRecoil * (strength < 0 ? 0 : strength);
         this._recoilTween?.stop();
@@ -195,11 +257,12 @@ export class Koolkan extends Component {
             .start();
     }
 
-    /** Wash Koolkan RED (mix to FLASH_PEAK) then back — the struck reaction. No-op without the SpriteFlash
-     *  material on his sprite (the shader's single `flashColor` vec4: .rgb = colour, .a = amount). */
-    private _flashRed(): void {
+    /** Wash Koolkan toward `color` (mix to FLASH_PEAK) then back. No-op without the SpriteFlash material on his
+     *  sprite (the shader's single `flashColor` vec4: .rgb = colour, .a = amount). */
+    private _flash(color: Color): void {
         this._gatherFlashMats();
         if (!this._flashMats.length) return;
+        this._flashColor.r = color.r; this._flashColor.g = color.g; this._flashColor.b = color.b;
         this._flashTween?.stop();
         this._flashT.v = 0;
         const apply = (): void => this._setFlash(this._flashT.v);
@@ -227,9 +290,34 @@ export class Koolkan extends Component {
         for (let i = 0; i < this._flashMats.length; i++) this._flashMats[i].setProperty('flashColor', this._flashColor);
     }
 
+    /** Shake the frame (shakeTarget) with a quick decaying jitter, then restore — the slam-to-sleep impact. */
+    private _shake(): void {
+        const t = this.shakeTarget;
+        if (!t?.isValid) return;
+        Tween.stopAllByTarget(t);
+        const base = t.position.clone();
+        const step = SLEEP_SHAKE_T / 6;
+        const tw = tween(t);
+        for (let i = 0; i < 5; i++) {
+            const amp = SLEEP_SHAKE_AMP * (1 - i / 5);   // decaying
+            tw.to(step, { position: new Vec3(base.x + (Math.random() * 2 - 1) * amp, base.y + (Math.random() * 2 - 1) * amp, base.z) }, { easing: 'quadOut' });
+        }
+        tw.to(step, { position: base }).start();
+    }
+
+    /** Force OFF any inner glow on his sprites (glowColor.a = 0) — used when he wakes/floats. No-op on materials
+     *  that don't carry the glow property. */
+    private _killGlow(): void {
+        this._gatherFlashMats();
+        for (let i = 0; i < this._flashMats.length; i++) {
+            const m = this._flashMats[i];
+            if (m.passes?.[0]?.getHandle('glowColor', 0)) m.setProperty('glowColor', this._glowOff);
+        }
+    }
+
     update(dt: number): void {
         if (EDITOR) return;                                // editor: only the sprite-swap preview, no motion
-        if (!this._floating && !this._recoiling) return;   // sleeping/resting and not bouncing → nothing to drive
+        if (!this._floating && !this._recoiling && !this._falling) return;   // sleeping & settled → nothing to drive
         let driftX = 0, bobY = 0, sway = 0, breath = 1;
         if (this._floating) {
             this._t += dt;
@@ -239,8 +327,8 @@ export class Koolkan extends Component {
             sway   = Math.sin(this._t * W_SWAY) * SWAY_DEG * k;
             breath = 1 + Math.sin(this._t * W_BREATH) * BREATH_AMP * k;
         }
-        // Compose the idle oscillation with the transient hit-recoil offset around the authored pose.
-        this.node.setPosition(this._basePos.x + driftX + this._recoil.x, this._basePos.y + bobY + this._recoil.y, this._basePos.z);
+        // Compose the idle oscillation + the transient hit-recoil + the wake rise around the authored pose.
+        this.node.setPosition(this._basePos.x + driftX + this._recoil.x, this._basePos.y + bobY + this._recoil.y + this._rise.v, this._basePos.z);
         this.node.angle = this._baseAngle + sway;
         this.node.setScale(this._baseScale.x * breath, this._baseScale.y * breath, this._baseScale.z);
     }
@@ -248,7 +336,11 @@ export class Koolkan extends Component {
     onDestroy(): void {
         this._recoilTween?.stop();
         this._recoilTween = null;
+        this._riseTween?.stop();
+        this._riseTween = null;
+        Tween.stopAllByTarget(this._rise);
         Tween.stopAllByTarget(this._recoil);
+        if (this.shakeTarget?.isValid) Tween.stopAllByTarget(this.shakeTarget);
         this._flashTween?.stop();
         this._flashTween = null;
         Tween.stopAllByTarget(this._flashT);

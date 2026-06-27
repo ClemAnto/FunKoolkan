@@ -2,7 +2,9 @@ import { _decorator, Component, Node, Prefab, instantiate, Vec3, CCInteger, CCFl
 import { EDITOR } from 'cc/env';
 import { AkuAku } from './AkuAku';
 import { AkuAkuBehavior } from './AkuAkuBehavior';
-import { projectX, projectY, sizeXFactor, unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
+import { Column } from './Column';
+import { PrayerSpirit } from './PrayerSpirit';
+import { unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
 
@@ -28,14 +30,20 @@ export class AkuAkuSpawner extends Component {
     @property({ type: Node, tooltip: 'Arena container — Aku-aku physics bodies spawn as its children (ground space), like the stones.' })
     arena: Node | null = null;
 
-    @property({ type: Node, tooltip: 'Stone layer where the Aku-aku view (prefab instance) is placed — the same layer as the rune views.' })
+    @property({ type: Node, tooltip: 'Optional: layer where the Aku-aku view (prefab instance) is placed — the same layer as the rune views. Leave empty to use the arena itself.' })
     stoneLayer: Node | null = null;
 
     @property({ type: Prefab, tooltip: 'The AkuAku prefab (carries the AkuAku component).' })
     akuPrefab: Prefab | null = null;
 
-    @property({ type: Prefab, tooltip: 'Optional dust-cloud VFX (a ParticleSystem2D prefab) puffed where an Aku-aku pops out. Empty = no dust.' })
-    dustPrefab: Prefab | null = null;
+    @property({ type: Column, tooltip: 'The column this spawner sends its Aku-aku to climb (the hole sits near it). RoundManager drives spawnOnColumn() onto this column.' })
+    column: Column | null = null;
+
+    @property({ type: PrayerSpirit, tooltip: 'Emitter for the purple prayer spirit (→ energy to Koolkan). Passed to each Aku that climbs; empty = no spirits.' })
+    prayerSpirit: PrayerSpirit | null = null;
+
+    @property({ type: ParticleSystem2D, tooltip: 'Optional dust puff — an authored ParticleSystem2D placed as a child of this spawner (on the hole). Played each time an Aku pops out. Empty = no dust.' })
+    dust: ParticleSystem2D | null = null;
 
     @property({ type: Node, tooltip: 'Background node: an eliminated Aku-aku drops INTO this (as its last child) during its descent, so it falls into the background. Empty = it stays in the stone layer.' })
     background: Node | null = null;
@@ -48,9 +56,6 @@ export class AkuAkuSpawner extends Component {
 
     @property({ tooltip: 'Start spawning automatically on load (else drive it via setRunning(true)).' })
     autoStart = true;
-
-    @property({ type: CCFloat, tooltip: 'Seconds the dust VFX lives before it is destroyed.' })
-    dustLifetime = 1.4;
 
     private _timer = 0;
     private _running = false;
@@ -91,9 +96,37 @@ export class AkuAkuSpawner extends Component {
         if (!beh) beh = node.addComponent(AkuAkuBehavior);   // brain (prefer authoring it on the prefab; added here as a fallback)
         aku.background = this.background;                    // where it drops during the eliminate descent
         beh.onGone = () => this.recycle(aku);                // off the cliff → free the slot + pool the node
-        this._playDust(pos.x, pos.y);
+        this._playDust();
         beh.spawn(this.arena!, pos.x, pos.y);                // place + body + emerge + run the behaviour loop
         this._live.push(aku);
+    }
+
+    /** Spawn an Aku-aku that climbs onto `column` and prays (GDD v0.4): pops from THIS hole, holds, hops to the
+     *  column, leaps on top, then prays after 2s. Called by the RoundManager when it wants one on a column.
+     *  Respects `maxCount`. Returns the spawned AkuAku (null if capped / not ready). */
+    spawnOnColumn(column?: Column): AkuAku | null {
+        if (EDITOR || !this.node.activeInHierarchy) return null;   // a disabled spawner node never spawns, even if called
+        const col = column ?? this.column;   // default to this spawner's associated column
+        if (!col?.node?.isValid) return null;
+        this._prune();
+        if (this._live.length >= this.maxCount) return null;
+        if (physicsDepth() <= 0 || !this.arena?.isValid || !this.akuPrefab) return null;
+        const pos = this._spawnGroundPos();
+        if (!pos) return null;
+        const node = this._obtain();
+        if (!node) return null;
+        node.setParent(this.stoneLayer ?? this.arena!);
+        const aku = node.getComponent(AkuAku);
+        if (!aku) { node.destroy(); return null; }
+        let beh = node.getComponent(AkuAkuBehavior);
+        if (!beh) beh = node.addComponent(AkuAkuBehavior);
+        aku.background = this.background;
+        beh.prayerSpirit = this.prayerSpirit;   // so its prayer emits spirits toward Koolkan
+        beh.onGone = () => this.recycle(aku);
+        this._playDust();
+        beh.spawnOnColumn(this.arena!, pos.x, pos.y, col);
+        this._live.push(aku);
+        return aku;
     }
 
     /** Recycle an eliminated Aku-aku back into the pool (call from its eliminate() onGone, once wired). */
@@ -129,18 +162,13 @@ export class AkuAkuSpawner extends Component {
     }
 
     /** Puff the dust VFX at the ground spot (projected to screen, depth-scaled), then auto-destroy it. */
-    private _playDust(gx: number, gy: number): void {
-        if (!this.dustPrefab || !this.arena?.isValid || !this.stoneLayer?.isValid) return;
-        const n = instantiate(this.dustPrefab) as unknown as Node;
-        n.layer = this.stoneLayer.layer;
-        n.setParent(this.stoneLayer);
-        _w.set(projectX(gx, gy), projectY(gy), 0);
-        Vec3.transformMat4(_w, _w, this.arena.worldMatrix);
-        n.setWorldPosition(_w);
-        const ws = this.arena.worldScale, s = sizeXFactor(gy);   // shrink the puff with depth, like the Aku-aku itself
-        n.setWorldScale(ws.x * s, ws.y * s, 1);
-        n.getComponent(ParticleSystem2D)?.resetSystem();
-        this.scheduleOnce(() => { if (n?.isValid) n.destroy(); }, this.dustLifetime);
+    /** Puff the authored dust ParticleSystem2D (a child of this spawner, sitting on the hole). No-op if none.
+     *  Activates the node first so the system has initialised (resetSystem crashes on an inactive/uninitialised PS). */
+    private _playDust(): void {
+        const ps = this.dust;
+        if (!ps?.isValid) return;
+        if (!ps.node.active) ps.node.active = true;
+        ps.resetSystem();
     }
 
     onDestroy(): void {

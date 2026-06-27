@@ -1,14 +1,24 @@
-import { _decorator, Component, Node, CCInteger, CCFloat, Color } from 'cc';
+import { _decorator, Component, Node, CCInteger, CCFloat, Color, Vec3, UITransform } from 'cc';
 import { EDITOR } from 'cc/env';
 import { AkuAku } from './AkuAku';
 import { Stone } from './Stone';
-import { physicsWidth, physicsDepth } from '../config/Perspective';
+import { Column } from './Column';
+import { PrayerSpirit } from './PrayerSpirit';
+import { physicsWidth, physicsDepth, unprojectX, unprojectY } from '../config/Perspective';
 
 const { ccclass, property, disallowMultiple, requireComponent, menu } = _decorator;
 
 const WANDER_INSET = 120;   // ground px kept from the edges when choosing a free zone (> the edge-kill band)
 const HIT_COOLDOWN = 0.5;   // s of immunity after a hit so one bump = one hit (not a burst of contacts)
 const ORANGE = new Color(255, 170, 60, 255);
+
+// "Climb a column and pray" spawn mode (GDD v0.4):
+const COLUMN_EMERGE_STILL = 0.5;   // s held still after popping out of the hole, before hopping to the column
+const COLUMN_HOPS = 5;             // "tanti balzetti" — little hops to approach the column base
+const COLUMN_PRAY_DELAY = 2;       // s perched on the column top before the prayer starts
+const PRAYER_SPIRIT_INTERVAL = 5;  // s of UNINTERRUPTED prayer per emitted spirit (→ energy to Koolkan); tunable
+
+const _wv = new Vec3();
 
 /** AI state. The visual phase (idle/pray/move/hit) lives in AkuAku; this is the higher-level intent. */
 enum Ai { Off, ToZone, Settling, Praying }
@@ -49,6 +59,18 @@ export class AkuAkuBehavior extends Component {
     private _impact = false;
     private _impactDirX = 0;    // horizontal travel sign of the last rune that hit (drives the eliminate direction)
 
+    // "Climb a column and pray" mode: driven by chained callbacks (emerge → still → hop → leap → perch → pray),
+    // not the wander update loop. When true, update() skips the free-wander / edge-kill / hit logic entirely.
+    private _columnMode = false;
+    private _column: Column | null = null;
+    private _arena: Node | null = null;
+    private _perchTop: Node | null = null;   // the column-top cube node the Aku perches on
+    private _perchOffsetY = 0;               // world-px above the top cube centre so the feet sit on it
+    private _perchedActive = false;          // true once perched → watch for the top cube changing (cube destroyed)
+    private _prayClock = 0;                  // s of uninterrupted prayer accumulated toward the next spirit
+    /** Emitter for the prayer spirit (set by the spawner). Null → no spirits emitted. */
+    prayerSpirit: PrayerSpirit | null = null;
+
     onLoad(): void { this._aku = this.getComponent(AkuAku); }
     onEnable(): void { AkuAkuBehavior._all.push(this); }
     onDisable(): void {
@@ -62,18 +84,36 @@ export class AkuAkuBehavior extends Component {
         if (!this._aku) this._aku = this.getComponent(AkuAku);
         const aku = this._aku;
         if (!aku) return;
+        this._columnMode = false; this._perchedActive = false;
         this._hp = Math.max(1, Math.floor(this.hp)); this._cooldown = 0; this._impact = false; this._state = Ai.Off;
         aku.reset();
         aku.onImpact = (_other, dirX) => { this._impact = true; this._impactDirX = dirX; };
         aku.onGone = () => this.onGone?.();                  // any death (cliff dive or star-zap) → free the slot + pool
         aku.configure(arena, gx, gy);
-        aku.attachPhysics();
-        aku.emerge(() => this._beginWander());
+        aku.emerge(() => { aku.attachPhysics(); this._beginWander(); });   // body attached AFTER the emerge hop
+    }
+
+    /** Column spawn entry (called by the spawner via RoundManager): pop out of the hole, hold 0.5s, hop over to
+     *  `column`, leap onto its top, then after 2s start praying. No free-wander / edge-kill — see _columnMode. */
+    spawnOnColumn(arena: Node, gx: number, gy: number, column: Column): void {
+        if (!this._aku) this._aku = this.getComponent(AkuAku);
+        const aku = this._aku;
+        if (!aku) return;
+        this._columnMode = true; this._column = column; this._arena = arena; this._perchedActive = false; this._prayClock = 0;
+        this._hp = Math.max(1, Math.floor(this.hp)); this._cooldown = 0; this._impact = false; this._state = Ai.Off;
+        aku.reset();
+        aku.onGone = () => this.onGone?.();
+        aku.configure(arena, gx, gy);
+        aku.emerge(() => {                                   // emerge hop (lands lower) → attach body → hold 0.5s
+            aku.attachPhysics();                             // body for the ground hops (removed on the leap)
+            this.scheduleOnce(() => this._hopToColumn(), COLUMN_EMERGE_STILL);
+        });
     }
 
     update(dt: number): void {
         if (EDITOR) return;
         const aku = this._aku;
+        if (this._columnMode) { this._tickColumnPerch(dt); return; }   // column flow is callback-driven; just watch the perch
         if (!aku || this._state === Ai.Off) return;
         if (!aku.alive) { this._state = Ai.Off; return; }
         if (this._cooldown > 0) this._cooldown -= dt;
@@ -97,6 +137,81 @@ export class AkuAkuBehavior extends Component {
         aku.moveTo(z.x, z.y, () => { this._state = Ai.Settling; this._timer = this.danceDelay; }, this.moveHops);
     }
 
+    // ── Column climb-and-pray sequence (chained callbacks) ──────────────────────────────────────────────
+
+    /** Step ③: hop over the ground to the foot of the column (~COLUMN_HOPS little jumps), then leap on top. */
+    private _hopToColumn(): void {
+        const aku = this._aku, col = this._column;
+        if (!aku?.alive || !col?.node?.isValid) { this.onGone?.(); return; }
+        const g = this._columnFootGround(col);
+        aku.moveTo(g.x, g.y, () => this._leapOntoColumn(), COLUMN_HOPS);
+    }
+
+    /** Step ④: one big leap onto the TOP cube of the column (or the column node if it has no cubes). */
+    private _leapOntoColumn(): void {
+        const aku = this._aku, col = this._column;
+        if (!aku?.alive || !col?.node?.isValid) { this.onGone?.(); return; }
+        const cubes = col.cubeList();
+        const top = cubes.length ? cubes[cubes.length - 1].node : col.node;
+        top.getWorldPosition(_wv);
+        const ut = top.getComponent(UITransform);
+        this._perchOffsetY = ut ? ut.contentSize.height * Math.abs(top.worldScale.y) * 0.5 : 0;   // stand ON the top
+        this._perchTop = top;
+        aku.leapTo(new Vec3(_wv.x, _wv.y + this._perchOffsetY, _wv.z), () => this._perchAndPray());
+    }
+
+    /** Step ⑤: perch on the column top, then after COLUMN_PRAY_DELAY begin the prayer. */
+    private _perchAndPray(): void {
+        const aku = this._aku, top = this._perchTop;
+        if (!aku?.alive || !top?.isValid) { this.onGone?.(); return; }
+        aku.perchOn(top, this._perchOffsetY);
+        this._perchedActive = true;                          // now watch for the top cube being destroyed (re-align)
+        this.scheduleOnce(() => { if (aku.alive && aku.perched) aku.pray(); }, COLUMN_PRAY_DELAY);
+    }
+
+    /** While perched: if the column's top cube changed (the one under/at the Aku was destroyed), drop the Aku to
+     *  the NEW top with a gummy bounce; if the column is fully cleared, the Aku has nowhere to stand → eliminated. */
+    private _tickColumnPerch(dt: number): void {
+        if (!this._perchedActive) return;
+        const aku = this._aku, col = this._column;
+        if (!aku?.alive || !col?.node?.isValid) return;
+
+        // Prayer spirit: every PRAYER_SPIRIT_INTERVAL s of UNINTERRUPTED prayer, emit one toward Koolkan. The
+        // clock only runs while actually praying; anything that breaks the prayer (re-align is fine, but a hit /
+        // eliminate stops it) resets it.
+        if (aku.praying) {
+            this._prayClock += dt;
+            if (this._prayClock >= PRAYER_SPIRIT_INTERVAL) {
+                this._prayClock = 0;
+                if (this.prayerSpirit) {
+                    console.log(`[AkuAkuBehavior] prayed ${PRAYER_SPIRIT_INTERVAL}s → emitting a spirit toward Koolkan`);
+                    this.prayerSpirit.launch(aku.headWorld(_wv));   // born at the Aku's head
+                } else {
+                    console.warn('[AkuAkuBehavior] prayerSpirit not assigned — no spirit emitted');
+                }
+            }
+        } else {
+            this._prayClock = 0;
+        }
+
+        const top = col.topLiveCube();
+        if (!top) { this._perchedActive = false; this._eliminate(0); return; }   // column cleared → falls
+        if (top.node === this._perchTop) return;                                  // still on the same top
+        this._perchTop = top.node;                                                // top changed → re-align down
+        const ut = top.node.getComponent(UITransform);
+        this._perchOffsetY = ut ? ut.contentSize.height * Math.abs(top.node.worldScale.y) * 0.5 : 0;
+        aku.reperchTo(top.node, this._perchOffsetY);
+    }
+
+    /** Ground point at the foot of `column`: its world position de-projected into the arena's flat ground space. */
+    private _columnFootGround(column: Column): { x: number; y: number } {
+        const arena = this._arena;
+        column.node.getWorldPosition(_wv);
+        const ut = arena?.getComponent(UITransform);
+        if (ut) ut.convertToNodeSpaceAR(_wv, _wv);   // world → arena-local (visual/projected)
+        return { x: unprojectX(_wv.x, _wv.y), y: unprojectY(_wv.y) };
+    }
+
     /** A hit: −1 HP. Still alive → orange hop + re-wander. HP hits 0 → eliminated (kicked out of the stadium). */
     private _onHit(): void {
         if (this._cooldown > 0) return;
@@ -113,6 +228,7 @@ export class AkuAkuBehavior extends Component {
         const aku = this._aku;
         if (!aku) return;
         this._state = Ai.Off;
+        this._perchedActive = false;
         aku.eliminate(dirX);                                    // red flash + flung out of the stadium (gone → onGone → recycle)
     }
 

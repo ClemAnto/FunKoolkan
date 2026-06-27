@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Vec2, Color, RigidBody2D, ERigidBody2DType } from 'cc';
+import { _decorator, Component, Node, Vec2, Color, RigidBody2D, ERigidBody2DType, tween } from 'cc';
 import { House } from './House';
 import { ManaLightning } from './ManaLightning';
 import { RaisingStar } from './RaisingStar';
@@ -12,6 +12,8 @@ const RECOIL_AB_DELAY = 0.2;  // s between the source (A) recoil and the struck 
 const CHAIN_REACH = 0.5;      // a shock jumps to a same-type stone whose edge-to-edge gap is under 1/4 of the
                               // shocking stone's DIAMETER (= its radius × this) — "almost touching" (GDD: chain outside the house)
 const _zero = new Vec2(0, 0); // reused scratch to zero a body's velocity when locking it
+const _bv = new Vec2();       // reused scratch for the per-frame braking velocity (set-then-assign, single frame)
+const BRAKE_TIME = 0.4;       // s to ramp a locked body's velocity LINEARLY to exactly zero, then freeze Static
 const WHITE = new Color(255, 255, 255, 255);          // hit flash of the STRUCK stone B (full white)
 const SOURCE_FLASH = new Color(220, 240, 255, 255);   // hit flash of the SOURCE/TEE stone A (cool white)
 
@@ -197,13 +199,32 @@ export class CurlingScorer extends Component {
         return order <= 0 ? 0 : order * this.strikeStagger + Math.random() * this.strikeStagger * STAGGER_JITTER;
     }
 
-    /** Freeze a stone's body (Static) so impacts can't move it while it is involved in the lightning. The
-     *  recoil is a VIEW-only nudge (Stone.nudge), so a locked body still animates. */
+    /** Freeze a stone's body so impacts can't move it while it is involved in the lightning. The recoil is a
+     *  VIEW-only nudge (Stone.nudge), so a locked body still animates. We do NOT zero the velocity in one step
+     *  (that reads as the stone "stopping dead" the instant the shock starts, especially a stone still gliding
+     *  toward the tee or caught by the chain mid-glide). Instead we ramp its velocity LINEARLY to exactly zero
+     *  over BRAKE_TIME — a constant deceleration that reads as a natural glide-to-stop — then freeze it Static
+     *  (a no-op by then, since the velocity is already zero, so there is no snap). */
     private _lock(stone: Stone): void {
         const rb = stone.node?.isValid ? stone.getComponent(RigidBody2D) : null;
         if (!rb || rb.type === ERigidBody2DType.Static) return;
-        rb.linearVelocity = _zero;
-        rb.angularVelocity = 0;
-        rb.type = ERigidBody2DType.Static;
+        const vx = rb.linearVelocity.x, vy = rb.linearVelocity.y, w = rb.angularVelocity;
+        const ramp = { f: 1 };
+        tween(ramp)
+            .to(BRAKE_TIME, { f: 0 }, {                          // linear (no easing): constant deceleration
+                onUpdate: () => {
+                    if (!rb.isValid) return;
+                    _bv.set(vx * ramp.f, vy * ramp.f);
+                    rb.linearVelocity = _bv;
+                    rb.angularVelocity = w * ramp.f;
+                },
+            })
+            .call(() => {
+                if (!rb.isValid || !stone.node?.isValid) return;
+                rb.linearVelocity = _zero;
+                rb.angularVelocity = 0;
+                rb.type = ERigidBody2DType.Static;
+            })
+            .start();
     }
 }

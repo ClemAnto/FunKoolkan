@@ -103,16 +103,50 @@ export class Column extends Component {
     private static readonly SHIFT_TIME = 0.22;
     /** Gap (s) between successive cube pops while filling — so cubes breach one after another. */
     private static readonly POP_STAGGER = 0.1;
+    /** Duration of one cube's pop-in (ColumnCube.playSpawn total) — used to know when the column is fully built. */
+    private static readonly POP_DURATION = 0.4;
+
+    /** Total time for fillCubes(count) to finish building (last cube starts at (count-1)·stagger, then pops). */
+    static fillDuration(count: number): number {
+        return count > 0 ? (count - 1) * Column.POP_STAGGER + Column.POP_DURATION : 0;
+    }
+
+    /** Topmost cube that is still standable (valid + not shattering) — what an Aku perches on. Null if none. */
+    topLiveCube(): ColumnCube | null {
+        const cubes = this.cubeList();
+        for (let i = cubes.length - 1; i >= 0; i--) {
+            const c = cubes[i];
+            if (c.node?.isValid && !c.exploding) return c;
+        }
+        return null;
+    }
+
+    /** Time of the gap-collapse slide (fast, gummy — the cubes above a destroyed one drop into place). */
+    private static readonly COLLAPSE_T = 0.18;
+
+    /** A cube shattered → slide every surviving cube down to a gap-free stack (the perched Aku rides the top one
+     *  down via its perch-follow). Called by each cube's onRemoved. */
+    collapse(): void {
+        const live = this.cubeList().filter(c => c.node?.isValid && !c.exploding);
+        for (let i = 0; i < live.length; i++) {
+            const slot = this._slot(i);
+            live[i].slideTo(slot.x, slot.y, Column.COLLAPSE_T);   // fast gummy fall (slideTo uses backOut)
+        }
+    }
 
     /**
-     * Build the column to `count` cubes of `type`, popping them in from the base one after another.
-     * The Column owns the whole spawn sequence/animation — callers (RoundManager) only state the target.
+     * Build the column to `count` cubes, popping them in from the base one after another. `palette` is either a
+     * single RuneKind (every cube that type) or a set of types (each cube gets a RANDOM type from the set — the
+     * round's allowed colours). The Column owns the whole spawn sequence/animation — callers only state the target.
      */
-    fillCubes(count: number, type: RuneKind, animated = true): void {
+    fillCubes(count: number, palette: RuneKind | RuneKind[], animated = true): void {
         this.clearCubes();
+        const pick = (): RuneKind => Array.isArray(palette)
+            ? (palette.length ? palette[Math.floor(Math.random() * palette.length)] : (0 as RuneKind))
+            : palette;
         for (let i = 0; i < count; i++) {
-            if (animated) this.scheduleOnce(() => this.addCube(type, true), i * Column.POP_STAGGER);
-            else this.addCube(type, false);
+            if (animated) this.scheduleOnce(() => this.addCube(pick(), true), i * Column.POP_STAGGER);
+            else this.addCube(pick(), false);
         }
     }
 
@@ -141,6 +175,7 @@ export class Column extends Component {
         node.setPosition(base.x, base.y, 0);
         const cc = node.getComponent(ColumnCube);
         if (!cc) { console.warn('[Column] cubePrefab has no ColumnCube component'); node.destroy(); return null; }
+        cc.onRemoved = () => this.collapse();   // shatter → slide the cubes above down into the gap
         cc.setType(type);
         if (animated) cc.playSpawn();
         return cc;

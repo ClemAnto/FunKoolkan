@@ -1,6 +1,6 @@
 import { _decorator, Component, Node, Vec2, Vec3, Vec4, UIOpacity, Sprite, Material, Color, CCInteger, tween, Tween, Enum, RigidBody2D, ERigidBody2DType, CircleCollider2D, Graphics, UITransform, Contact2DType, Collider2D, Prefab, instantiate, ParticleSystem2D, resources, view } from 'cc';
 import { EDITOR } from 'cc/env';
-import { physicsDepth, physicsWidth, projectX, projectY, sizeXFactor } from '../config/Perspective';
+import { physicsDepth, physicsWidth, projectX, projectY, sizeXFactor, unprojectY } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
 import { Stone } from './Stone';
 
@@ -22,7 +22,7 @@ const _v = new Vec3();
 
 /** Lifecycle phase of an Aku-aku. The spawner / wake-gauge logic decides WHEN to switch (e.g. hit() while
  *  it still has lives, eliminate() on the killing blow); this component only PLAYS the look of each phase. */
-enum Phase { Idle, Dance, Move, Emerge, Hit, Eliminated, Zapped, Pray }
+enum Phase { Idle, Dance, Move, Emerge, Hit, Eliminated, Zapped, Pray, Leap }
 
 /** Auto-played state on start() — for trying the feel in play mode before the spawner exists. */
 enum StartState { None, Idle, Dance, Pray }
@@ -52,6 +52,7 @@ const EMERGE_FLAT_X = 1.2;    // initial horizontal scale in the hole (only slig
 const EMERGE_FLAT_Y = 0.35;   // initial vertical scale in the hole (squashed short)
 const EMERGE_RISE_T = 0.16;   // s: burst up out of the ground (stretch tall)
 const EMERGE_SET_T  = 0.52;   // s: drop back and bounce to the resting pose (bounceOut = the rubbery bounces)
+const EMERGE_DROP   = 30;     // px: the emerge is a little hop that LANDS this much lower on screen than the hole
 
 // Electrified-death (struck by a RaisingStar): leap up, flicker white↔cyan, then burst into sparks.
 const ZAP_TIME       = 0.5;   // s of electrified flicker before the explosion
@@ -74,12 +75,23 @@ const ELIM_APEXT_MIN = 0.30;  // fraction of the flight spent rising — small =
 const ELIM_APEXT_MAX = 0.45;
 const ELIM_TOP_OVER_MIN = 0.08;  // apex sits this far ABOVE the screen's TOP edge, as a fraction of screen height
 const ELIM_TOP_OVER_MAX = 0.22;  // (shoots a bit off the top → a high jump)
+const ELIM_HIGH_HOP     = 0.08;  // apex height (fraction of H) above the START when eliminated from a HIGH spot → a small hop
 const ELIM_LAND_MIN = 0.75;       // landing height above the BOTTOM edge, as a fraction of the arena height
 const ELIM_LAND_MAX = 0.90;       // (upper-middle, but not too high)
 const ELIM_SIDE_FRAC_MIN = 0.10;  // horizontal travel from the contact point, as a fraction of HALF the width
 const ELIM_SIDE_FRAC_MAX = 0.28;  // (a small drift in the rune's direction — stays well clear of the edge)
 const ELIM_END_SCALE = 0.0;   // final size (× the start scale) → shrinks all the way to nothing
 const ELIM_FADE = 0.35;       // the last fraction of the flight also fades the Aku out (on top of the shrink)
+
+// Leap onto a column: a world-space ballistic arc of the ROOT (projection frozen), landing on the column top,
+// then it PERCHES there (root glued to the top cube) — used by the "climb a column and pray" spawn mode.
+const COLUMN_LEAP_DUR = 0.5;   // s of the leap onto the column top
+const COLUMN_LEAP_ARC_MIN = 50;   // min apex height (world px) over the straight line, so even a short hop arcs
+const COLUMN_LEAP_ARC_K = 0.4;    // apex height as a fraction of the leap distance (bigger leap = higher arc)
+// Re-align when a cube vanishes under a perched Aku: a small hop UP, then settle down to the new (lower) top.
+const REPERCH_HOP      = 30;      // world px of the little hop up before dropping
+const REPERCH_HOP_T    = 0.12;    // s of the hop up
+const REPERCH_SETTLE_T = 0.42;    // s to settle onto the new top (gummy elastic bounce)
 
 const SHADOW_SHRINK = 0.35;   // ground shadow shrinks by up to 35% at the apex of a hop (sells the height)
 const SHADOW_FADE   = 0.45;   // ...and lightens by up to 45% — together they read the jump height
@@ -207,6 +219,19 @@ export class AkuAku extends Component {
     private _zapT = 0;              // electrified-death flicker clock
     private _zapTween: Tween<Node> | null = null;
 
+    // Leap onto a column + perch: the leap arcs the ROOT in world space (frozen), then `_perch` glues the root
+    // to the column-top node every frame (lateUpdate), so the Aku rides the column while praying.
+    private _perch: Node | null = null;          // column-top node to follow while perched (null = not perched)
+    private _perchOffsetY = 0;                   // world-px above the perch node's centre (so the feet sit ON it)
+    private readonly _reperch = { extra: 0 };    // transient world-Y offset added while re-aligning to a new top (bounces to 0)
+    private _reperchTween: Tween<{ extra: number }> | null = null;
+    private _leapT = 0;                          // leap clock
+    private _leapDur = COLUMN_LEAP_DUR;
+    private _leapArc = 0;                         // apex height of the current leap (world px)
+    private readonly _leapStart = new Vec3();     // leap start WORLD pos
+    private readonly _leapEnd = new Vec3();       // leap landing WORLD pos (column top)
+    private _onLand: (() => void) | null = null;  // fired when the leap lands
+
     private _frozen = false;        // Eliminated → stop projecting; the ROOT flies the parabola out of the stadium
     private _elimT = 0;             // elapsed flight time
     private _elimDur = 1;           // randomised flight duration
@@ -225,6 +250,12 @@ export class AkuAku extends Component {
     private _body: Node | null = null;
     private _physRadius = 0;
     private _emergeTween: Tween<Node> | null = null;
+    // Emerge hop: while the body breaches, the GROUND position eases down so the Aku LANDS EMERGE_DROP px lower
+    // than the hole (a little hop out). No physics body during emerge → lateUpdate doesn't fight the drop.
+    private _dropFromGy = 0;
+    private _dropToGy = 0;
+    private _dropClock = 0;
+    private _dropDur = 0;   // > 0 while the emerge drop is animating
     private _dbg: Graphics | null = null;   // debug overlay for the physics body (a flat ground disc)
     private _externallyDriven = false;      // true once a spawner has configure()d this one → start() ignores startState
     private readonly _facingT = { v: 1 };   // animated horizontal flip multiplier (eases through 0 → a rubbery turn-around)
@@ -436,6 +467,12 @@ export class AkuAku extends Component {
         this._emergeTween?.stop(); this._emergeTween = null;
         this._phase = Phase.Emerge;
         this.node.angle = 0;                             // a fresh upright spawn (clear any leftover tumble angle)
+        // Set up the ground drop: land EMERGE_DROP px lower on screen than the hole (converted to a ground delta
+        // via the projection). Eased over the emerge in _tickEmergeDrop. (No physics body yet → it isn't fought.)
+        this._dropFromGy = this._gy;
+        this._dropToGy = unprojectY(projectY(this._gy) - EMERGE_DROP);
+        this._dropClock = 0;
+        this._dropDur = EMERGE_RISE_T + EMERGE_SET_T;
         this._project();                                 // place the root NOW so frame 1 isn't at the un-projected prefab spot
         const b = this.body;
         this._setEyesClosed(true);                       // eyes shut underground; reopen when it lands
@@ -458,8 +495,18 @@ export class AkuAku extends Component {
             .start();
     }
 
+    /** Ease the ground position down during the emerge (so the hop LANDS EMERGE_DROP px lower than the hole).
+     *  Ease-in (u²) → most of the descent happens late, as the body settles. */
+    private _tickEmergeDrop(dt: number): void {
+        if (this._dropDur <= 0) return;
+        this._dropClock = Math.min(this._dropDur, this._dropClock + dt);
+        const u = this._dropClock / this._dropDur;
+        this._gy = this._dropFromGy + (this._dropToGy - this._dropFromGy) * (u * u);
+    }
+
     private _afterEmerge(onDone?: () => void): void {
         this._emergeTween = null;
+        if (this._dropDur > 0) { this._gy = this._dropToGy; this._dropDur = 0; }   // snap to the landed ground
         if (this.body) {
             this.body.setPosition(this._bodyPos);
             this.body.setScale(this._bodyScale);
@@ -514,6 +561,91 @@ export class AkuAku extends Component {
         this._enter(Phase.Move);
     }
 
+    /** Leap (world-space ballistic arc) from wherever it is onto `targetWorld` — used to jump onto a column top.
+     *  Drops the ground body & freezes the projection (the root flies free); `onLand` fires when it touches down
+     *  (typically to perchOn the column). The body keeps its facing and gets a small jump-stretch. */
+    leapTo(targetWorld: Vec3, onLand?: () => void): void {
+        if (!this.alive) return;
+        this._hitTween?.stop(); this._hitTween = null;
+        this._emergeTween?.stop(); this._emergeTween = null;
+        this._destroyBody();                                   // off the ground → no longer collides
+        this._perch = null;
+        this._phase = Phase.Leap;
+        this.node.getWorldPosition(this._leapStart);
+        this._leapEnd.set(targetWorld);
+        const dist = Math.hypot(this._leapEnd.x - this._leapStart.x, this._leapEnd.y - this._leapStart.y);
+        this._leapArc = Math.max(COLUMN_LEAP_ARC_MIN, dist * COLUMN_LEAP_ARC_K);
+        this._leapDur = COLUMN_LEAP_DUR;
+        this._leapT = 0;
+        this._onLand = onLand ?? null;
+        this._frozen = true;
+        if (this.shadow) this.shadow.active = false;           // airborne → no ground shadow
+        const b = this.body;
+        if (b) {                                               // a tall jump-stretch (keep facing)
+            Tween.stopAllByTarget(b);
+            const st = 1 + STRETCH_RATIO * this.squashAmount;
+            b.setPosition(this._bodyPos);
+            b.setScale(this._bodyScale.x * (2 - st) * this._facing, this._bodyScale.y * st, 1);
+            b.angle = this._bodyAngle;
+        }
+    }
+
+    /** Glue the root to `target` (the column-top node) every frame, `offsetY` world-px above its centre so the
+     *  feet rest ON it. Stops the ground projection; the body keeps animating (idle, then pray) on top. */
+    perchOn(target: Node, offsetY: number): void {
+        this._perch = target;
+        this._perchOffsetY = offsetY;
+        this._reperchTween?.stop(); this._reperch.extra = 0;
+        this._frozen = true;
+        this._phase = Phase.Idle;
+        this._initBlink();
+    }
+
+    /** Re-align to a NEW top cube after the one below was destroyed: keep following `target` but DROP into place
+     *  with a gummy elastic bounce (the column got shorter). Keeps whatever it was doing (idle / praying). */
+    reperchTo(target: Node, offsetY: number): void {
+        if (!this.alive || !target?.isValid) return;
+        const curY = this.node.worldPosition.y;            // where the feet are right now
+        this._perch = target;
+        this._perchOffsetY = offsetY;
+        target.getWorldPosition(_v);
+        const startExtra = curY - (_v.y + offsetY);        // current feet height relative to the new top
+        this._reperch.extra = startExtra;
+        this._reperchTween?.stop();
+        this._reperchTween = tween(this._reperch)
+            .to(REPERCH_HOP_T, { extra: startExtra + REPERCH_HOP }, { easing: 'quadOut' })   // small hop UP first
+            .to(REPERCH_SETTLE_T, { extra: 0 }, { easing: 'elasticOut' })                    // then settle down to the new top
+            .start();
+    }
+
+    /** True once perched on a column (riding the top cube). */
+    get perched(): boolean { return !!this._perch?.isValid; }
+
+    /** True while actually praying (the wake ritual) — used to time the prayer spirit emission. */
+    get praying(): boolean { return this._phase === Phase.Pray; }
+
+    /** World position the prayer spirit is born from — the Aku's position raised 40px (≈ its head). */
+    headWorld(out: Vec3): Vec3 {
+        this.node.getWorldPosition(out);
+        out.y += 40;
+        return out;
+    }
+
+    /** Per-frame during the leap: arc the ROOT in world space from start to the column top, then land. */
+    private _tickLeap(dt: number): void {
+        this._leapT += dt;
+        const t = Math.min(1, this._leapT / this._leapDur);
+        const x = this._leapStart.x + (this._leapEnd.x - this._leapStart.x) * t;
+        const y = this._leapStart.y + (this._leapEnd.y - this._leapStart.y) * t + Math.sin(Math.PI * t) * this._leapArc;
+        this.node.setWorldPosition(x, y, this._leapStart.z);
+        if (t >= 1) {
+            if (this.body) { this.body.setPosition(this._bodyPos); this.body.setScale(this._bodyScale.x * this._facing, this._bodyScale.y, 1); this.body.angle = this._bodyAngle; }
+            this._phase = Phase.Idle;
+            const cb = this._onLand; this._onLand = null;
+            cb?.();
+        }
+    }
+
     /** Struck but NOT eliminated: flash white + a quick pop-and-spin recoil, then resume the prior state.
      *  (Health / how many hits it survives is the caller's concern — call eliminate() on the killing blow.) */
     hit(color?: Color, onDone?: () => void): void {
@@ -549,6 +681,7 @@ export class AkuAku extends Component {
         if (!this.alive) return;
         this._flash(ELIM_FLASH_COLOR, 0.9);                          // red flash as it's knocked off
         this._setGlow(false); this._setBubbles(false);               // drop the prayer aura if it was praying
+        this._perch = null;                                          // release the column perch → the parabola flies free
         this._phase = Phase.Eliminated;
         this._claimed = false;
         this._hitTween?.stop(); this._hitTween = null;
@@ -581,7 +714,12 @@ export class AkuAku extends Component {
             leftX = this._elimStart.x - vs.width * 0.5; rightX = this._elimStart.x + vs.width * 0.5;
         }
         const topOver = (ELIM_TOP_OVER_MIN + Math.random() * (ELIM_TOP_OVER_MAX - ELIM_TOP_OVER_MIN)) * H;
-        this._elimApexY = topY + topOver;                                                // apex ABOVE the top edge → high jump
+        // Apex scales with HOW HIGH it starts: a LOW start jumps all the way up (near/above the top edge); a HIGH
+        // start (e.g. perched on a tall column) only does a small hop — the higher the start, the lower the jump.
+        const startNorm = Math.max(0, Math.min(1, (this._elimStart.y - botY) / Math.max(1, H)));
+        const highApex = topY + topOver;                                                 // target for a LOW start
+        const lowApex = this._elimStart.y + ELIM_HIGH_HOP * H;                            // small hop for a HIGH start
+        this._elimApexY = highApex + (lowApex - highApex) * startNorm;                   // lerp by start height
         this._elimLandY = botY + (ELIM_LAND_MIN + Math.random() * (ELIM_LAND_MAX - ELIM_LAND_MIN)) * H;   // fraction up the height
         const dir = dirX !== 0 ? (dirX > 0 ? 1 : -1) : (Math.random() < 0.5 ? -1 : 1);   // same way as the rune
         const horiz = (ELIM_SIDE_FRAC_MIN + Math.random() * (ELIM_SIDE_FRAC_MAX - ELIM_SIDE_FRAC_MIN)) * (rightX - leftX) * 0.5;
@@ -599,6 +737,8 @@ export class AkuAku extends Component {
     electrifyAndExplode(): void {
         if (!this.alive) return;
         this._setGlow(false); this._setBubbles(false);               // drop the prayer aura if it was praying
+        if (this._perch) this._frozen = true;                        // was on a column → freeze in place (don't re-project to the ground)
+        this._perch = null;
         this._phase = Phase.Zapped;
         this._claimed = false;                                       // consumed
         this._hitTween?.stop(); this._hitTween = null;
@@ -681,6 +821,9 @@ export class AkuAku extends Component {
         this._frozen = false; this._t = 0; this._elimT = 0;
         this._elimSentBack = false;
         this._onArrive = null;
+        this._perch = null; this._perchOffsetY = 0; this._leapT = 0; this._onLand = null;
+        this._reperchTween?.stop(); this._reperch.extra = 0;
+        this._dropDur = 0;
         this.node.angle = 0;                  // clear any leftover eliminate tumble (lateUpdate won't reset angle)
         this._setFlash(0);
         this._opacity().opacity = 255;
@@ -702,10 +845,11 @@ export class AkuAku extends Component {
             case Phase.Pray:       this._tickPray(dt); this._tickGlow(dt); break;   // idle sway (feet planted) + pulsing purple rim
             case Phase.Dance:      this._tickHop(dt, true); break;
             case Phase.Move:       this._tickMove(dt); break;
-            case Phase.Emerge:     break;                 // driven by the emerge tween
+            case Phase.Emerge:     this._tickEmergeDrop(dt); break;   // body breach via tween; ground eases down here
             case Phase.Hit:        break;                 // driven by the hit tween
             case Phase.Eliminated: this._tickEliminate(dt); break;
             case Phase.Zapped:     this._tickZap(dt); break;   // electrified flicker (body leap driven by a tween)
+            case Phase.Leap:       this._tickLeap(dt); break;  // world-space arc onto a column top
         }
         this._applyBody(dt);
     }
@@ -737,6 +881,11 @@ export class AkuAku extends Component {
     /** Project the ground position to screen (same maths as Stone.lateUpdate), so the Aku-aku obeys the
      *  perspective. Skipped while frozen (eliminated) or before the arena is wired (keeps editor placement). */
     lateUpdate(): void {
+        if (this._perch?.isValid) {                            // perched on a column → ride the top cube, no projection
+            this._perch.getWorldPosition(_v);
+            this.node.setWorldPosition(_v.x, _v.y + this._perchOffsetY + this._reperch.extra, _v.z);   // +extra = re-align bounce
+            return;
+        }
         if (this._frozen) return;
         // While DYNAMIC (idle/dance/hit) the physics body drives the ground position → the runes shove it. While
         // MOVING the AI drives it (the body is Kinematic and follows in _tickMove), so don't read it back here.
@@ -901,7 +1050,7 @@ export class AkuAku extends Component {
     private _sendToBackground(): void {
         this._elimSentBack = true;
         const bg = this.background;
-        if (!bg?.isValid) return;
+        if (!bg?.isValid) { console.warn('[AkuAku] background not assigned (set it on the AkuAkuSpawner) — the eliminated Aku falls in FRONT instead of behind everything'); return; }
         if (this.node.parent !== bg) this.node.setParent(bg, true);   // keep world transform
         this.node.setSiblingIndex(bg.children.length - 1);            // ALWAYS the last child
     }
@@ -1158,6 +1307,7 @@ export class AkuAku extends Component {
         this._flashTween?.stop(); this._flashTween = null;
         this._facingTween?.stop(); this._facingTween = null;
         this._zapTween?.stop(); this._zapTween = null;
+        this._reperchTween?.stop(); this._reperchTween = null;
         this._destroyBody();
         if (this._dbg?.isValid) this._dbg.node.destroy();
         this._dbg = null;

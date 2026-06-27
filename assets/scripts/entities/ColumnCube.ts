@@ -45,6 +45,9 @@ export class ColumnCube extends Component {
     private _exploding = false;      // shattering → no longer a valid target / takes no more hits
     private readonly _baseScale = new Vec3(1, 1, 1);   // authored resting scale (hit bounce + shatter pop animate around it)
 
+    /** Set by the owning Column — called when this cube shatters so the column can collapse the gap above it. */
+    onRemoved: (() => void) | null = null;
+
     /** Live registry (runtime only) — RaisingStar reads it to find the topmost cube of a given type. */
     private static _all: ColumnCube[] = [];
     static get all(): readonly ColumnCube[] { return ColumnCube._all; }
@@ -123,6 +126,9 @@ export class ColumnCube extends Component {
     /** Remaining hits before the cube shatters. */
     get hp(): number { return this._hp; }
 
+    /** True once the cube is shattering (popping out + about to be destroyed) — no longer a place to stand on. */
+    get exploding(): boolean { return this._exploding; }
+
     /** Can a same-type star still aim here? Alive (not shattering) and not already fully reserved by stars in
      *  flight (so a cluster of stars spreads across cubes instead of overkilling one). */
     get targetable(): boolean { return !this._exploding && this._hp - this._reserved > 0; }
@@ -173,6 +179,7 @@ export class ColumnCube extends Component {
     private _shatter(): void {
         this._exploding = true;
         this._reserved = 0;
+        this.onRemoved?.();   // tell the column to collapse the cubes above into the gap
         this._hitTween?.stop(); this._spawnTween?.stop(); this._slideTween?.stop();
         this._spawnBurst();
         this.setFlash(HIT_WHITE, 1);

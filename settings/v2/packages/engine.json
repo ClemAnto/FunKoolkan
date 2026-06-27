@@ -45,7 +45,7 @@
             "_value": true
           },
           "ui-skew": {
-            "_value": false
+            "_value": true
           },
           "affine-transform": {
             "_value": true
@@ -209,6 +209,7 @@
           "rich-text",
           "tween",
           "ui",
+          "ui-skew",
           "video"
         ],
         "noDeprecatedFeatures": {

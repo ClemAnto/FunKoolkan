@@ -2,12 +2,12 @@
   "ver": "1.1.50",
   "importer": "prefab",
   "imported": true,
-  "uuid": "4cd9765c-0538-4f64-b913-633e005d3c71",
+  "uuid": "93cf4221-d7fb-4cc8-9d1a-24ddae21e8ef",
   "files": [
     ".json"
   ],
   "subMetas": {},
   "userData": {
-    "syncNodeName": "PrayerBubbles"
+    "syncNodeName": "DustPuff"
   }
 }

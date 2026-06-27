@@ -2,7 +2,7 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "61b3906b-cbe6-431d-b6bc-b3d74463b43e",
+  "uuid": "7b24bb4a-09c3-4376-aa54-9acef0cc3d5e",
   "files": [
     ".json",
     ".png"
@@ -10,14 +10,14 @@
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "61b3906b-cbe6-431d-b6bc-b3d74463b43e@6c48a",
-      "displayName": "gem_red",
+      "uuid": "7b24bb4a-09c3-4376-aa54-9acef0cc3d5e@6c48a",
+      "displayName": "gem_blue",
       "id": "6c48a",
       "name": "texture",
       "userData": {
         "wrapModeS": "clamp-to-edge",
         "wrapModeT": "clamp-to-edge",
-        "imageUuidOrDatabaseUri": "61b3906b-cbe6-431d-b6bc-b3d74463b43e",
+        "imageUuidOrDatabaseUri": "7b24bb4a-09c3-4376-aa54-9acef0cc3d5e",
         "isUuid": true,
         "visible": false,
         "minfilter": "linear",
@@ -34,8 +34,8 @@
     },
     "f9941": {
       "importer": "sprite-frame",
-      "uuid": "61b3906b-cbe6-431d-b6bc-b3d74463b43e@f9941",
-      "displayName": "gem_red",
+      "uuid": "7b24bb4a-09c3-4376-aa54-9acef0cc3d5e@f9941",
+      "displayName": "gem_blue",
       "id": "f9941",
       "name": "spriteFrame",
       "userData": {
@@ -113,7 +113,7 @@
           ]
         },
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "61b3906b-cbe6-431d-b6bc-b3d74463b43e@6c48a",
+        "imageUuidOrDatabaseUri": "7b24bb4a-09c3-4376-aa54-9acef0cc3d5e@6c48a",
         "atlasUuid": "",
         "trimType": "auto"
       },
@@ -129,6 +129,6 @@
     "type": "sprite-frame",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": true,
-    "redirect": "61b3906b-cbe6-431d-b6bc-b3d74463b43e@6c48a"
+    "redirect": "7b24bb4a-09c3-4376-aa54-9acef0cc3d5e@6c48a"
   }
 }

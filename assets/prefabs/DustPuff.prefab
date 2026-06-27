@@ -1,7 +1,7 @@
 [
   {
     "__type__": "cc.Prefab",
-    "_name": "PrayerBubbles",
+    "_name": "DustPuff",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_native": "",
@@ -13,7 +13,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "PrayerBubbles",
+    "_name": "DustPuff",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": null,
@@ -32,8 +32,8 @@
     },
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 0,
-      "y": 0,
+      "x": 30.875,
+      "y": -7.597,
       "z": 0
     },
     "_lrot": {
@@ -45,9 +45,9 @@
     },
     "_lscale": {
       "__type__": "cc.Vec3",
-      "x": 1,
-      "y": 1,
-      "z": 1
+      "x": 2.039,
+      "y": 2.039,
+      "z": 2.039
     },
     "_mobility": 0,
     "_layer": 1073741824,
@@ -85,7 +85,7 @@
   },
   {
     "__type__": "cc.CompPrefabInfo",
-    "fileId": "b1PrayerBubblesUITr01"
+    "fileId": "c1DustPuffUITransf001"
   },
   {
     "__type__": "cc.ParticleSystem2D",
@@ -109,16 +109,16 @@
       "b": 255,
       "a": 255
     },
-    "duration": -1,
-    "emissionRate": 10,
-    "life": 1.6,
-    "lifeVar": 0.5,
+    "duration": 0.12,
+    "emissionRate": 200,
+    "life": 0.5,
+    "lifeVar": 0.2,
     "angle": 90,
-    "angleVar": 18,
-    "startSize": 2,
-    "startSizeVar": 1,
-    "endSize": 16,
-    "endSizeVar": 4,
+    "angleVar": 90,
+    "startSize": 16,
+    "startSizeVar": 8,
+    "endSize": 32,
+    "endSizeVar": 20,
     "startSpin": 0,
     "startSpinVar": 0,
     "endSpin": 0,
@@ -130,19 +130,19 @@
     },
     "posVar": {
       "__type__": "cc.Vec2",
-      "x": 18,
-      "y": 6
+      "x": 10,
+      "y": 5
     },
     "emitterMode": 0,
     "gravity": {
       "__type__": "cc.Vec2",
       "x": 0,
-      "y": 25
+      "y": -25
     },
-    "speed": 22,
-    "speedVar": 10,
-    "tangentialAccel": 8,
-    "tangentialAccelVar": 8,
+    "speed": 60,
+    "speedVar": 35,
+    "tangentialAccel": 0,
+    "tangentialAccelVar": 0,
     "radialAccel": 0,
     "radialAccelVar": 0,
     "rotationIsDir": false,
@@ -159,29 +159,29 @@
     "_custom": true,
     "_file": null,
     "_spriteFrame": {
-      "__uuid__": "edbf98bd-f2a9-40ad-8c39-b1f076c7616b@f9941",
+      "__uuid__": "58451b7e-ed7e-4bd7-a1a5-2f9b2a903024@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
-    "_totalParticles": 24,
+    "_totalParticles": 30,
     "_startColor": {
       "__type__": "cc.Color",
       "r": 210,
-      "g": 180,
-      "b": 255,
+      "g": 195,
+      "b": 165,
       "a": 200
     },
     "_startColorVar": {
       "__type__": "cc.Color",
-      "r": 0,
-      "g": 0,
-      "b": 0,
-      "a": 0
+      "r": 15,
+      "g": 15,
+      "b": 15,
+      "a": 30
     },
     "_endColor": {
       "__type__": "cc.Color",
-      "r": 190,
-      "g": 140,
-      "b": 255,
+      "r": 185,
+      "g": 170,
+      "b": 145,
       "a": 0
     },
     "_endColorVar": {
@@ -196,7 +196,7 @@
   },
   {
     "__type__": "cc.CompPrefabInfo",
-    "fileId": "b2PrayerBubblesP2D002"
+    "fileId": "c2DustPuffParticle002"
   },
   {
     "__type__": "cc.PrefabInfo",
@@ -206,9 +206,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "b3PrayerBubblesRoot03",
-    "instance": null,
-    "targetOverrides": null,
-    "nestedPrefabInstanceRoots": null
+    "fileId": "c3DustPuffRoot003Zxy",
+    "targetOverrides": null
   }
 ]
