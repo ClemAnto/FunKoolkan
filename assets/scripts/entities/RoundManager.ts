@@ -4,8 +4,11 @@ import { Column } from './Column';
 import { AkuAkuSpawner } from './AkuAkuSpawner';
 import { ArenaManager } from '../managers/ArenaManager';
 import { Koolkan } from './Koolkan';
+import { House } from './House';
+import { EndPanel } from '../managers/EndPanel';
 import { PrayerSpirit } from './PrayerSpirit';
 import { RuneKind } from '../config/RuneTypes';
+import { EditState } from '../config/EditState';
 
 const { ccclass, property } = _decorator;
 
@@ -29,6 +32,9 @@ const AKU_AUTO = true;           // during a round, send Aku to climb the column
 const AKU_AFTER_COLUMNS = 0.5;   // s to wait AFTER the columns finish building before the first Aku pops out
 const AKU_WAVE_STAGGER = 0.5;    // s between Aku in the initial wave (one pops out after another)
 const AKU_SEND_INTERVAL = 4;     // s between subsequent sends (round-robin refill after the initial wave)
+
+// ── anti-stall game-over ──
+const HOUSE_STARVE_SECONDS = 30; // GAME OVER if no stone is in the house for this long (you must keep feeding it)
 
 /**
  * Per-round director (GDD v0.4). Owns the variables that change round to round (round number, column
@@ -57,7 +63,15 @@ export class RoundManager extends Component {
     @property({ type: Koolkan, tooltip: 'The boss — put back to Sleeping (energy reset) at the start of each round / on round-up.' })
     koolkan: Koolkan | null = null;
 
+    @property({ type: House, tooltip: 'The House (occupancy authority) — if no stone is in the house for 30s the game ends (anti-stall).' })
+    house: House | null = null;
+
+    @property({ type: EndPanel, tooltip: 'Game-over panel, faded in when the game ends. Optional (leave empty to just halt + log for now).' })
+    endPanel: EndPanel | null = null;
+
     private _round = 0;
+    private _starve = 0;       // seconds the house has been empty — the anti-stall game-over countdown
+    private _over = false;     // game over latched (stops the round loop + spawns)
     private _akuTimer = 0;     // countdown to the next Aku-on-column send (active only during a round)
     private _nextSpawner = 0;  // round-robin cursor over `akuSpawners`
     private _sawCubes = false;    // armed once this round's cubes have appeared → clearing them all triggers ROUND UP
@@ -65,6 +79,9 @@ export class RoundManager extends Component {
 
     /** Current round (0 = pre-game / reset, 1 = first round). */
     get round(): number { return this._round; }
+
+    /** True once the game has ended (e.g. the house was starved) — other systems can check to stop reacting. */
+    get isOver(): boolean { return this._over; }
 
     /** Rune types in play this round — the palette for the columns AND the set the rune spawner (ArenaManager)
      *  may shoot. Never empty: before the first round it returns round 1's palette (so the first runes are right). */
@@ -145,7 +162,8 @@ export class RoundManager extends Component {
     }
 
     update(dt: number): void {
-        if (EDITOR || this._round <= 0) return;
+        if (EDITOR || this._over || this._round <= 0) return;
+        this._tickStarvation(dt);                          // anti-stall: empty house for too long → game over
         if (this._roundReady) this._checkRoundCleared();   // all columns empty → level passed (off during clear→fill)
         // Aku-on-column refill
         if (!AKU_AUTO || this.akuSpawners.length === 0) return;
@@ -153,6 +171,25 @@ export class RoundManager extends Component {
         if (this._akuTimer > 0) return;
         this._akuTimer = AKU_SEND_INTERVAL;
         this._sendOneAku();
+    }
+
+    /** Anti-stall: the countdown runs only while the house is EMPTY; any stone in the house holds it at zero.
+     *  Reach HOUSE_STARVE_SECONDS without getting a stone in → GAME OVER. Paused while authoring in EDIT mode. */
+    private _tickStarvation(dt: number): void {
+        if (EditState.editing) { this._starve = 0; return; }            // not failing while you author the board
+        if (!this.house || this.house.hasStonesInHouse()) { this._starve = 0; return; }   // a stone is in → safe
+        this._starve += dt;
+        if (this._starve >= HOUSE_STARVE_SECONDS) this.gameOver(`no stone reached the house for ${HOUSE_STARVE_SECONDS}s`);
+    }
+
+    /** End the game: latch _over (stops update + spawns), cancel pending fills/waves, and fade in the end panel.
+     *  Score/best are placeholders until the new scoring is wired. */
+    gameOver(reason = ''): void {
+        if (this._over) return;
+        this._over = true;
+        console.log(`[RoundManager] GAME OVER${reason ? ` — ${reason}` : ''}`);
+        this.unscheduleAllCallbacks();                       // drop pending column fills / Aku waves
+        this.endPanel?.show(0, this._round, 0, false);       // TODO: real score/best; freeze launcher + rune spawn; PortalSdk.gameplayStop()
     }
 
     /** ROUND UP: once this round's cubes have appeared and are ALL then cleared, the level is passed. (For now we

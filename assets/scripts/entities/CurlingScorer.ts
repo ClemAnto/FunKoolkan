@@ -161,6 +161,9 @@ export class CurlingScorer extends Component {
             // RaisingStar (pops → sparkle → same-type column cube), and relays the shock to its near neighbours.
             this.scheduleOnce(() => {
                 if (!target.isValid) return;
+                // A PETRIFIED rune is the recovery valve: the discharge SHATTERS it (it can be hit) but the shock
+                // DEAD-ENDS here — it does not become a star and does not propagate onward (a dead conductor).
+                if (target.petrified) { target.shatter(); return; }
                 target.flashWhite(WHITE, 0.8, 0.1);   // initial flash ramps gradually 0 → 0.8 over 0.1s
                 if (this.raisingStar?.isValid) this.raisingStar.launch(target, type);
                 else target.nudge(fwdX, fwdY, this.recoilPixels);

@@ -38,6 +38,9 @@ const LAUNCH_FLASH = 0.5;      // white amount (0..1) the launch flash reaches
 const LAUNCH_DROP_PX = 10;     // loaded stone drops this many px (screen) as it departs the launcher
 const LAUNCH_DROP_TIME = 0.1;  // duration of the loaded stone's drop + whiten on fire (reload waits this long)
 const FIRED_FLASH_TIME = 0.15; // fired stone fades from half white back to normal over this
+// TEMP: bomb-rune overcharge is disabled for now — pulling past full power launches a normal stone and shows no
+// charge cue. Flip back to true to restore the bomb (spawn + red throb + vibration + indicator + gauge hue).
+const BOMB_OVERCHARGE_ENABLED = false;
 const BOMB_FLASH_COLOR = new Color(255, 40, 40, 255);   // red the bomb-charge flash washes the stone toward (loaded + fired)
 const BOMB_FLASH_BASE = 0.30;  // midpoint flash amount of the throbbing bomb-charge red (0..1)
 const BOMB_FLASH_AMP = 0.18;   // ± amplitude of the red throb
@@ -426,11 +429,19 @@ export class StoneLauncher extends Component {
 
     private _beginAim(x: number, y: number): void {
         if (this._suspended || this._launching) return;   // another mode owns input, or mid launch-departure → inert
+        if (!this._loadedReady()) return;        // no stone ready/visible on the launcher (reloading, or mid pop) → can't aim yet (no spam)
         if (this.onAimPress?.(x, y)) return;     // consumed by the coordinator (e.g. tap on NEXT → swap)
         if (!this._hitLauncher(x, y)) return;    // arm ONLY when the FIRST touch is ON the launcher (a tap/drag starting elsewhere is ignored; a pure click never reaches minDrag → never fires)
         this._aiming = true; this._cur.set(x, y);
         this._path = []; this._trajAlpha = 0;    // fresh aim: starts as an invalid (zero-drag) pose, eases in as you pull
         this._resim();
+    }
+
+    /** True when a stone is fully loaded AND visible on the launcher (settled pop, valid rune) — i.e. ready
+     *  to fire. False during the post-launch reload window (loaded collapsed to 0, ~loadPopDelay) and the
+     *  pop-out/pop-in animation, so the player can't spam shots before the next rune has actually appeared. */
+    private _loadedReady(): boolean {
+        return this._loadPhase === 0 && !!this._loadedRune?.node?.isValid;
     }
 
     /** True if a UI point lands on the launcher's hit box (its UITransform). The launcher arms only
@@ -453,7 +464,7 @@ export class StoneLauncher extends Component {
         const len = this._dragLen(pull);
         if (len < this.minDrag || pull.y > 0) return;   // too short, or pulled ABOVE the launcher → invalid, no launch
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
-        const isBomb = len >= this.maxDrag * this.bombDragFactor;   // pulled PAST full power into the overcharge zone → bomb
+        const isBomb = BOMB_OVERCHARGE_ENABLED && len >= this.maxDrag * this.bombDragFactor;   // pulled PAST full power into the overcharge zone → bomb (disabled for now)
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull (visual dir)
         const dir = this._groundDir(eff.x, eff.y);     // unit ground direction
         const spawn = this._spawnFrom(dir.x, dir.y);   // just outside the launcher body, along the shot
@@ -541,7 +552,7 @@ export class StoneLauncher extends Component {
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull
         this._armTarget = -Math.atan2(eff.x, eff.y) * 180 / Math.PI * this.bowFollowFactor;
         this._trajTargetAlpha = 1;                    // valid → update() eases arm + dots back in (symmetric transition)
-        this._bombCharged = len >= this.maxDrag * this.bombDragFactor;   // in the bomb-overcharge zone (for the future cue)
+        this._bombCharged = BOMB_OVERCHARGE_ENABLED && len >= this.maxDrag * this.bombDragFactor;   // bomb-overcharge zone (disabled for now → cue stays off)
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
         this._gauge = power; this._setGaugePower(power);   // follows the drag directly while aiming
         const d0 = this._groundDir(eff.x, eff.y);

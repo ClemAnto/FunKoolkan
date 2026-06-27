@@ -106,6 +106,37 @@ export class House extends Component {
         return false;
     }
 
+    /** Whether ANY live stone currently overlaps the HOUSE ring (same projected-footprint test). The
+     *  RoundManager's anti-stall timer reads this: while it's true the player is keeping a stone in the house,
+     *  so the game-over countdown is held at zero. Allocation-free (early-out, no array). */
+    hasStonesInHouse(): boolean {
+        const zone = this._house;
+        if (zone.rx <= 0 || zone.ry <= 0) return false;
+        const stones = Stone.all;
+        for (let i = 0; i < stones.length; i++) {
+            const st = stones[i];
+            if (!st.node?.isValid) continue;
+            const p = st.node.position;                          // ground space
+            const svx = projectX(p.x, p.y), svy = projectY(p.y); // → arena-local visual
+            const srx = st.radius * sizeXFactor(p.y), sry = st.radius * sizeYFactor(p.y);
+            if (this._overlaps(zone, svx, svy, srx, sry)) return true;
+        }
+        return false;
+    }
+
+    /** Whether a stone currently overlaps the HOUSE ring (same projected-footprint ellipse test). The
+     *  Petrifier reads this so stones INSIDE the house never petrify — the house is the safe working/scoring
+     *  zone (aim accurately to land here; miss and the stray rune sets into an obstacle outside).
+     *  Allocation-free (early-out, no array). */
+    isInHouse(stone: Stone): boolean {
+        const zone = this._house;
+        if (zone.rx <= 0 || zone.ry <= 0 || !stone.node?.isValid) return false;
+        const p = stone.node.position;                          // ground space (body is a child of the arena)
+        const svx = projectX(p.x, p.y), svy = projectY(p.y);   // → arena-local visual
+        const srx = stone.radius * sizeXFactor(p.y), sry = stone.radius * sizeYFactor(p.y);
+        return this._overlaps(zone, svx, svy, srx, sry);
+    }
+
     /** Shared query for the curling scoring: every live stone whose on-screen ellipse overlaps `zone`
      *  (same projected-position test as the debug detection). Zones are refreshed each frame in update(). */
     private _collect(zone: Zone, out: Stone[]): void {

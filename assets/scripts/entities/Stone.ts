@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Vec2, Vec3, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate, Graphics, Color, Sprite, Material, tween, Tween } from 'cc';
+import { _decorator, Component, Node, Vec2, Vec3, Vec4, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate, Graphics, Color, Sprite, Material, ParticleSystem2D, resources, tween, Tween } from 'cc';
 import { projectX, projectY, sizeXFactor, sizeYFactor } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
 import { Rune } from './Rune';
@@ -7,6 +7,12 @@ import { Bomb } from './Bomb';
 
 const { ccclass } = _decorator;
 const _v = new Vec3();
+const _zeroVel = new Vec2();   // reused scratch to zero a body's velocity when petrifying it
+const _fxv = new Vec4();       // reused scratch for the SpriteFlash fxParams (.y desaturation, .z darken)
+const PETRIFY_DESAT = 1;       // petrified rune: fully drain the gem's colour to grayscale
+const PETRIFY_DARKEN = 0.3;    // …and darken it slightly (0..1) → a stony grey that keeps the gem's relief/shading
+const STONE_PULSE_FREQ = 8;    // rad/s of the pre-petrify warning throb (the SAME stone fx, oscillating)
+const STONE_PULSE_PEAK = 0.9;  // warning peaks at this fraction of the full petrify look (just shy of fully set)
 const STAR_FLASH = new Color(255, 255, 255, 255);   // white wash that accompanies the pop into a star
 
 /**
@@ -32,6 +38,17 @@ export class Stone extends Component {
     radius = 0;
     /** Debug: set by House when this stone overlaps the HOUSE zone → its debug outline thickens. */
     debugInHouse = false;
+
+    /** PETRIFICATION (self-punishment): a rune left at rest OUTSIDE the house turns to stone — its body
+     *  becomes Static, an immovable obstacle that blocks the slide of future runes and crowds the arena
+     *  toward overflow. Mirrors Puzzle Bobble / Tetris, where a misplaced piece stays on the board and
+     *  becomes the penalty. Set/driven by the Petrifier; the house is the safe zone (never petrifies). */
+    petrified = false;
+    /** Dwell timer (s) the Petrifier accrues while this stone rests outside the house; reset when it moves
+     *  or enters the house. Stored here so the Petrifier stays allocation-free (same pattern as debugInHouse). */
+    petrifyDwell = 0;
+    private _stonePulse = false;   // pre-petrify warning active: throb the stone fx (desat+darken) in update()
+    private _stoneT = 0;           // warning throb phase accumulator
 
     /** Transient SCREEN-space offset added to the view each frame — drives the non-physics "nudge" recoil
      *  animation (the body never moves). Zero at rest; animated by nudge(). */
@@ -66,7 +83,7 @@ export class Stone extends Component {
     /** All live stones — for systems that need to find them (e.g. the Bomb blast). */
     private static _all: Stone[] = [];
     static get all(): readonly Stone[] { return Stone._all; }
-    onEnable(): void { Stone._all.push(this); }
+    onEnable(): void { Stone._all.push(this); Stone._fxLoad(); }   // warm the shatter VFX prefab
     onDisable(): void { const i = Stone._all.indexOf(this); if (i >= 0) Stone._all.splice(i, 1); }
 
     lateUpdate(): void {
@@ -145,10 +162,66 @@ export class Stone extends Component {
         this._pulseBase = base; this._pulseAmp = amp; this._pulseFreq = freq; this._pulseT = 0;
     }
 
+    /** Pre-petrify WARNING: throb the SAME stone fx as the final petrification (desaturation + darken),
+     *  oscillating up and down, so the player SEES the rune "turning to stone" and can still save it (knock it
+     *  into the house, or clear it) before it sets. update() drives the throb. No-op once petrified. */
+    warnPetrify(): void {
+        if (this.petrified) return;
+        this._gatherFlashMats();
+        if (!this._flashMats.length) return;
+        this._stonePulse = true;
+        this._stoneT = 0;
+    }
+
+    /** Cancel the warning throb (the stone moved again, or slid into the safe house) and return to full colour.
+     *  No-op if not currently warning or already petrified (petrification is permanent). */
+    clearPetrifyWarning(): void {
+        if (this.petrified || !this._stonePulse) return;
+        this._stonePulse = false;
+        this._applyStoneFx(0, 0);   // back to full colour
+    }
+
+    /** Drive the SpriteFlash stone fx on this stone's view materials: .y = desaturation, .z = darken. */
+    private _applyStoneFx(desat: number, darken: number): void {
+        if (!this._flashMats.length) return;
+        _fxv.set(0, Math.max(0, Math.min(1, desat)), Math.max(0, Math.min(1, darken)), 0);
+        for (let i = 0; i < this._flashMats.length; i++) this._flashMats[i].setProperty('fxParams', _fxv);
+    }
+
+    /** PETRIFY (one-way): freeze the body Static — an immovable obstacle that blocks the slide of future runes
+     *  and crowds the arena toward overflow — give it a crisp wall-like bounce (collider restitution = the arena
+     *  border value, passed in), and turn the gem to STONE: fully desaturate to grayscale + darken (keeps the
+     *  relief, removes the hue). Recovery valve = shatter() when a same-type discharge reaches it. */
+    petrify(restitution = 1): void {
+        if (this.petrified || !this.node?.isValid) return;
+        this.petrified = true;
+        this._stonePulse = false;                      // stop the warning throb (it sets steady now)
+        const rb = this.getComponent(RigidBody2D);
+        if (rb && rb.type !== ERigidBody2DType.Static) {
+            rb.linearVelocity = _zeroVel;
+            rb.angularVelocity = 0;
+            rb.type = ERigidBody2DType.Static;         // immovable terrain from now on
+        }
+        // Crisp bounce like the arena borders: moving runes rebound off it cleanly (Box2D mixes restitution as max()).
+        const col = this.getComponent(CircleCollider2D);
+        if (col) { col.restitution = restitution; col.apply(); }
+        // "Turned to stone": drain the gem's saturation to grayscale and darken it via the SpriteFlash fxParams
+        // (.y = desaturation, .z = darken) — the relief/shading stays, only the colour goes.
+        this._gatherFlashMats();
+        this._applyStoneFx(PETRIFY_DESAT, PETRIFY_DARKEN);
+    }
+
     update(dt: number): void {
-        if (!this._pulseColor) return;   // only a bomb stone runs a continuous pulse
-        this._pulseT += dt;
-        this._setFlash(this._pulseBase + this._pulseAmp * Math.sin(this._pulseT * this._pulseFreq));
+        if (this._pulseColor) {   // a fired bomb stone runs a continuous red flash pulse
+            this._pulseT += dt;
+            this._setFlash(this._pulseBase + this._pulseAmp * Math.sin(this._pulseT * this._pulseFreq));
+        }
+        if (this._stonePulse) {   // pre-petrify warning: throb the stone fx (desat+darken) toward the petrified look
+            this._stoneT += dt;
+            const phase = (Math.sin(this._stoneT * STONE_PULSE_FREQ) + 1) * 0.5;   // 0..1
+            const amt = STONE_PULSE_PEAK * phase;                                   // 0 .. peak fraction of full
+            this._applyStoneFx(PETRIFY_DESAT * amt, PETRIFY_DARKEN * amt);
+        }
     }
 
     /** Material instances of the view sprites, gathered once — a per-sprite instance so this stone flashes
@@ -199,6 +272,50 @@ export class Stone extends Component {
                 if (this.node?.isValid) this.node.destroy();
             })
             .start();
+    }
+
+    /** SHATTER: the recovery valve for a PETRIFIED rune. When a curling discharge reaches a petrified stone it
+     *  does NOT become a star and the shock does NOT propagate from it (CurlingScorer dead-ends on it) — instead
+     *  the stone bursts: a spark burst + a quick white flash + a swell-then-collapse pop, then body + view are
+     *  destroyed. One-shot (shares the _vanishing guard with vanishAsStar — a stone can't both star and shatter). */
+    shatter(): void {
+        if (this._vanishing || !this.node?.isValid) return;
+        this._vanishing = true;
+        this._nudgeTween?.stop(); this._nudgeTween = null;
+        this.viewOffset.set(0, 0, 0);
+        this._spawnBurst();
+        this.flashWhite(STAR_FLASH, 1, 0.05, 0.15);
+        Tween.stopAllByTarget(this._spring);
+        this._spring.s = 1;
+        tween(this._spring)
+            .to(0.07, { s: 1.35 }, { easing: 'backOut' })   // swell
+            .to(0.13, { s: 0 }, { easing: 'backIn' })        // collapse to nothing
+            .call(() => { if (this.node?.isValid) this.node.destroy(); })
+            .start();
+    }
+
+    /** Instantiate the shatter spark burst (loaded from resources, same prefab the column cube / Aku death use)
+     *  at the view's position, as a SIBLING of the view so it outlives this stone. Additive blend is authored on
+     *  the prefab; it self-removes when finished. */
+    private _spawnBurst(): void {
+        const prefab = Stone._fxLoad(), view = this.viewNode, parent = view?.parent;
+        if (!prefab || !view?.isValid || !parent?.isValid) return;
+        const n = instantiate(prefab) as unknown as Node;
+        n.layer = view.layer;
+        n.setParent(parent);
+        n.setWorldPosition(view.worldPosition);
+        const ps = n.getComponent(ParticleSystem2D) ?? n.getComponentInChildren(ParticleSystem2D);
+        if (ps) { ps.autoRemoveOnFinish = true; ps.resetSystem(); }
+    }
+
+    // Shatter VFX prefab, loaded once from resources/ (no per-stone @property). undefined = not requested,
+    // null = loading/failed, Prefab = ready.
+    private static _fx: Prefab | null | undefined = undefined;
+    private static _fxLoad(): Prefab | null {
+        if (Stone._fx !== undefined) return Stone._fx;
+        Stone._fx = null;
+        resources.load('prefabs/SparkBurst', Prefab, (err, p) => { Stone._fx = err ? null : p; });
+        return null;
     }
 
     /** Full ±180 Z rotation of the body in degrees. Box2D is 2D → the body's rotation is a pure-Z
