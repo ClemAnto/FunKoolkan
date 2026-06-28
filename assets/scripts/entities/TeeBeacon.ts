@@ -1,5 +1,6 @@
 import { _decorator, Component, Node, UIOpacity } from 'cc';
 import { House } from './House';
+import { GameMode } from '../config/GameMode';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
 
@@ -35,6 +36,7 @@ export class TeeBeacon extends Component {
     private _held = 0;     // 0 = pulsing freely, 1 = locked bright; eased toward occupancy
 
     onLoad(): void {
+        if (GameMode.stickyPrototype) return;   // curling off in the sticky prototype → leave the tee overlay as authored (off)
         if (!this.house) this.house = this.getComponent(House);   // convenience if it shares the House node
         if (!this.lit?.isValid) { console.warn('[TeeBeacon] no `lit` overlay assigned — beacon disabled'); return; }
         this.lit.active = true;                                   // the authored overlay ships inactive

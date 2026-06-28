@@ -1,6 +1,7 @@
 import { _decorator, Component, Node, Vec3, Mat4, UITransform, Graphics, Color } from 'cc';
 import { physicsDepth, projectX, projectY, sizeXFactor, sizeYFactor } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
+import { GameMode } from '../config/GameMode';
 import { Stone } from './Stone';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
@@ -57,6 +58,7 @@ export class House extends Component {
     }
 
     update(): void {
+        if (GameMode.stickyPrototype) { if (this._dbg?.isValid) this._dbg.clear(); return; }   // curling off in the sticky prototype (no house/tee, no debug)
         if (physicsDepth() <= 0) return;   // perspective not configured yet (ArenaBounds builds it on start)
         this._refresh(this._house, this.house);
         this._refresh(this._tee, this.tee);

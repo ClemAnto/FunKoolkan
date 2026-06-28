@@ -5,7 +5,6 @@ import { ArenaBounds } from './ArenaBounds';
 import { RUNES } from '../config/RuneTypes';
 import { projectX, projectY, sizeXFactor, sizeYFactor, unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
-import { GameMode } from '../config/GameMode';
 
 const { ccclass, property } = _decorator;
 
@@ -195,6 +194,7 @@ export class StoneLauncher extends Component {
     get suspended(): boolean { return this._suspended; }
 
     onEnable(): void {
+        StoneLauncher._instance = this;
         Stone.debugDraw = this.debugStones;
         input.on(Input.EventType.TOUCH_START, this._onTouchStart, this);
         input.on(Input.EventType.TOUCH_MOVE,  this._onTouchMove,  this);
@@ -211,6 +211,7 @@ export class StoneLauncher extends Component {
         }
     }
     onDisable(): void {
+        if (StoneLauncher._instance === this) StoneLauncher._instance = null;
         input.off(Input.EventType.TOUCH_START, this._onTouchStart, this);
         input.off(Input.EventType.TOUCH_MOVE,  this._onTouchMove,  this);
         input.off(Input.EventType.TOUCH_END,   this._onTouchEnd,   this);
@@ -445,9 +446,24 @@ export class StoneLauncher extends Component {
         return this._loadPhase === 0 && !!this._loadedRune?.node?.isValid;
     }
 
-    /** Whether pulling past full power arms an overcharged shot: always in the sticky prototype (→ OVERPOWER),
-     *  else the legacy bomb gate. */
-    private _overchargeOn(): boolean { return GameMode.stickyPrototype || BOMB_OVERCHARGE_ENABLED; }
+    /** Whether pulling past full power arms an overcharged shot (legacy bomb gate — off by default). The sticky
+     *  prototype no longer uses the overcharge: the detonator is the ManaFlame (fly a shot through it). */
+    private _overchargeOn(): boolean { return BOMB_OVERCHARGE_ENABLED; }
+
+    /** Total stones fired (a real launch). Static so the ManaFlame can pace its appearances by shots without a
+     *  per-instance reference. Monotonic for the session. */
+    private static _launchCount = 0;
+    static get launchCount(): number { return StoneLauncher._launchCount; }
+
+    /** The active launcher — so systems like the ManaFlame can reach arena/stoneLayer/spawnRestingStone with
+     *  zero editor wiring. */
+    private static _instance: StoneLauncher | null = null;
+    static get instance(): StoneLauncher | null { return StoneLauncher._instance; }
+
+    /** The rune fired on the CURRENT turn (most recent launch) — the ManaFlame only ignites this one, not other
+     *  runes that happen to roll through the flame. */
+    private static _lastFired: Stone | null = null;
+    static get lastFired(): Stone | null { return StoneLauncher._lastFired; }
 
     /** True if a UI point lands on the launcher's hit box (its UITransform). The launcher arms only
      *  when the first touch is on it — mirrors NextPreview.containsUIPoint (UI-world AABB test). */
@@ -469,9 +485,7 @@ export class StoneLauncher extends Component {
         const len = this._dragLen(pull);
         if (len < this.minDrag || pull.y > 0) return;   // too short, or pulled ABOVE the launcher → invalid, no launch
         const power = Math.min(len, this.maxDrag) / this.maxDrag;
-        const overcharged = this._overchargeOn() && len >= this.maxDrag * this.bombDragFactor;   // pulled PAST full power into the overcharge zone
-        const isOverpower = overcharged && GameMode.stickyPrototype;   // sticky prototype: overcharge fires an OVERPOWER shot…
-        const isBomb = overcharged && !GameMode.stickyPrototype;       // …else (legacy curling core) it fires a bomb
+        const isBomb = this._overchargeOn() && len >= this.maxDrag * this.bombDragFactor;   // pulled PAST full power → bomb (legacy gate, off by default)
         const eff = this._aimDir(-pull.x, -pull.y);   // slingshot: fire OPPOSITE the pull (visual dir)
         const dir = this._groundDir(eff.x, eff.y);     // unit ground direction
         const spawn = this._spawnFrom(dir.x, dir.y);   // just outside the launcher body, along the shot
@@ -489,12 +503,13 @@ export class StoneLauncher extends Component {
             linearDamping: this.stoneDamping,
             gemType: this._loadedType,
             isBomb,
-            isOverpower,
-            name: isBomb ? 'BombStone' : isOverpower ? 'OverpowerStone' : 'LaunchedStone',
+            name: isBomb ? 'BombStone' : 'LaunchedStone',
         });
         const firedStone = fired.getComponent(Stone);
-        if (isBomb || isOverpower) firedStone?.flashPulse(BOMB_FLASH_COLOR, BOMB_FLASH_BASE, BOMB_FLASH_AMP, BOMB_FLASH_FREQ);   // a charged shot (bomb/overpower) KEEPS a throbbing red
+        if (isBomb) firedStone?.flashPulse(BOMB_FLASH_COLOR, BOMB_FLASH_BASE, BOMB_FLASH_AMP, BOMB_FLASH_FREQ);   // a bomb KEEPS a throbbing red
         else firedStone?.flashFrom(LAUNCH_WHITE, LAUNCH_FLASH, FIRED_FLASH_TIME);   // normal shot: half white, fades to normal
+        StoneLauncher._launchCount++;
+        StoneLauncher._lastFired = firedStone;   // the current turn's rune — the only one the ManaFlame may ignite
 
         // Loaded stone DEPARTS: drop a few px + wash to half white over LAUNCH_DROP_TIME, THEN reload (the
         // coordinator's armReload collapses it to 0). Delaying the reload keeps the departure visible.

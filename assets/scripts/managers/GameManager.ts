@@ -1,10 +1,12 @@
 import { _decorator, Component, view, ResolutionPolicy } from 'cc';
 import { StoneExplosion } from '../entities/StoneExplosion';
+import { GameMode } from '../config/GameMode';
+import { ManaFlame } from '../entities/ManaFlame';
 
 const { ccclass } = _decorator;
 
 /** Game version — keep aligned with package.json (see CLAUDE.md §Versioning). */
-export const VERSION = '0.2.10';
+export const VERSION = '0.2.11';
 
 /**
  * FunKoolkan game manager — PLACEHOLDER (intentionally near-empty).
@@ -38,5 +40,8 @@ export class GameManager extends Component {
     }
     start(): void {
         console.log(`[FunKoolkan] v${VERSION} — GameManager placeholder (legacy warrior engine removed).`);
+        // Sticky prototype: auto-install the ManaFlame detonator director (zero editor wiring — it resolves the
+        // launcher/arena via StoneLauncher.instance). The getComponent guard avoids a duplicate on this node.
+        if (GameMode.stickyPrototype && !this.getComponent(ManaFlame)) this.addComponent(ManaFlame);
     }
 }

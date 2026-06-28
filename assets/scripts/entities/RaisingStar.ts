@@ -1,6 +1,7 @@
 import { _decorator, Component, Node, Vec3, Mat4, Sprite, UIOpacity, ParticleSystem2D, Prefab, instantiate, gfx, Color, tween } from 'cc';
 import { Stone } from './Stone';
 import { ColumnCube } from './ColumnCube';
+import { Koolkan } from './Koolkan';
 
 const { ccclass, property, disallowMultiple, menu } = _decorator;
 
@@ -32,6 +33,7 @@ interface Star {
     age: number;
     type: number;               // the star's rune type (-1 = any) — used to re-home if its cube vanishes mid-flight
     targetCube: ColumnCube | null;   // the reserved topmost same-type column cube this star homes onto & damages
+    koolkan: Koolkan | null;    // alternative target: the boss (sticky prototype) — hits Koolkan instead of a cube
 }
 
 /**
@@ -108,7 +110,12 @@ export class RaisingStar extends Component {
     private readonly _stars: Star[] = [];
     private _warned = false;
 
+    /** The active instance — so the Overpower shot can fire stars with no editor wiring. */
+    private static _instance: RaisingStar | null = null;
+    static get instance(): RaisingStar | null { return RaisingStar._instance; }
+
     onLoad(): void {
+        RaisingStar._instance = this;
         const root = new Node('RaisingStarFX');
         root.layer = this.node.layer;
         root.setParent(this.node);
@@ -132,18 +139,31 @@ export class RaisingStar extends Component {
         stone.vanishAsStar(this.popDelay, this.popExpand, this.popTime, () => this._spawnStar(from, type));
     }
 
+    /** Sticky prototype: the struck stone pops and the star flies into KOOLKAN (not a column cube), dealing him
+     *  a hit on impact. No boss in the scene → the stone still pops, no star spawns. */
+    launchAtKoolkan(stone: Stone, type: number): void {
+        if (!stone?.isValid || !stone.viewNode?.isValid) return;
+        const from = stone.viewNode.worldPosition.clone();
+        stone.vanishAsStar(this.popDelay, this.popExpand, this.popTime, () => this._spawnStar(from, type, Koolkan.instance));
+    }
+
     /** Spawn a sparkle at a WORLD position and register it for the birth → flight → impact choreography. It
      *  homes onto the topmost same-`type` column cube (type < 0 → any cube, for the editor auto-test). No
      *  available cube → no star (the struck stone has already vanished). */
-    private _spawnStar(fromWorld: Readonly<Vec3>, type: number): void {
+    private _spawnStar(fromWorld: Readonly<Vec3>, type: number, koolkan: Koolkan | null = null): void {
         if (!this._root?.isValid) return;                    // component torn down before the stone finished popping
         if (!this.sparklePrefab) {
             if (!this._warned) { console.warn('[RaisingStar] sparklePrefab not assigned — nothing to spawn'); this._warned = true; }
             return;
         }
         if (this._stars.length >= MAX_STARS) return;
-        const cube = this._claimTopmostCube(type);
-        if (!cube) return;                                   // no same-type column cube to hit → don't spawn a star
+        let cube: ColumnCube | null = null;
+        if (koolkan?.node?.isValid) {
+            // target the boss (sticky prototype) — no cube reservation
+        } else {
+            cube = this._claimTopmostCube(type);
+            if (!cube) return;                               // no same-type column cube to hit → don't spawn a star
+        }
 
         const root = instantiate(this.sparklePrefab);
         this._applyLayer(root, this._root!.layer);
@@ -166,7 +186,7 @@ export class RaisingStar extends Component {
         const spread = this.hitSpread;
         this._stars.push({ root, op, star, trail, p0, side: Math.random() < 0.5 ? -1 : 1,
             ox: (Math.random() * 2 - 1) * spread, oy: (Math.random() * 2 - 1) * spread, baseScale, age: 0,
-            type, targetCube: cube });
+            type, targetCube: cube, koolkan: cube ? null : koolkan });
     }
 
     /** Claim the TOPMOST (highest on screen) still-targetable column cube of `type` (type < 0 → any type), so
@@ -217,7 +237,7 @@ export class RaisingStar extends Component {
             // ── FLIGHT: accelerate along a bowed quadratic bezier into the reserved column cube. ──
             // If the reserved cube vanished mid-flight (e.g. a round reset), re-home onto another same-type
             // cube (reserving one of ITS HP); if none is left the star fizzles at impact.
-            if (!s.targetCube?.node?.isValid) s.targetCube = this._claimTopmostCube(s.type);
+            if (!s.koolkan && !s.targetCube?.node?.isValid) s.targetCube = this._claimTopmostCube(s.type);   // re-home (cube path only)
             const ft = (s.age - birth - hold) / fly;
             if (ft >= 1 || !this._targetLocal(s, _wp)) { this._impact(s); this._stars.splice(i, 1); continue; }
             const u = ft * ft;                                  // eased-in → the star accelerates and slams home
@@ -240,9 +260,11 @@ export class RaisingStar extends Component {
         const onTarget = this._targetLocal(s, _wp);
         const hx = (onTarget ? _wp.x : s.p0.x) + s.ox, hy = (onTarget ? _wp.y : s.p0.y) + s.oy;   // same scattered point
         this._flash(hx, hy, this.explosionScale);              // a flash at the moment of impact either way
-        this._burst(this.explosionSparkPrefab, hx, hy);        // sparks on the cube
-        if (s.targetCube?.node?.isValid) s.targetCube.applyHit();   // -1 HP (consumes the reservation; shatters at 0)
+        this._burst(this.explosionSparkPrefab, hx, hy);        // sparks on the target
+        if (s.koolkan?.node?.isValid) s.koolkan.hit();              // sticky prototype: damage the boss
+        else if (s.targetCube?.node?.isValid) s.targetCube.applyHit();   // -1 HP (consumes the reservation; shatters at 0)
         s.targetCube = null;
+        s.koolkan = null;
         if (s.star?.isValid) s.star.active = false;            // the star is "consumed"; keep root lit for the trail
         if (s.trail?.isValid) s.trail.stopSystem();            // stop emitting; live sparks finish in place (FREE)
         this.scheduleOnce(() => { if (s.root?.isValid) s.root.destroy(); }, TRAIL_LINGER);
@@ -252,9 +274,13 @@ export class RaisingStar extends Component {
      *  (where the path lives). Re-read each frame so the star tracks the cube if the stack shifts. False once
      *  the cube is gone → the star ends. */
     private _targetLocal(s: Star, out: Vec3): boolean {
+        Mat4.invert(_inv, this.node.worldMatrix);
+        if (s.koolkan?.node?.isValid) {                        // boss target (sticky prototype)
+            Vec3.transformMat4(out, s.koolkan.node.worldPosition, _inv);
+            return true;
+        }
         const c = s.targetCube;
         if (!c?.node?.isValid) return false;
-        Mat4.invert(_inv, this.node.worldMatrix);
         c.faceCenterWorld(_fw);
         Vec3.transformMat4(out, _fw, _inv);
         return true;

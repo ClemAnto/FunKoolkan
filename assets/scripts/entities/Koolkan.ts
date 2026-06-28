@@ -102,6 +102,10 @@ export class Koolkan extends Component {
     })
     wakeEnergy = 5;
 
+    /** The boss instance — so the RaisingStar can home onto it with no editor wiring. */
+    private static _instance: Koolkan | null = null;
+    static get instance(): Koolkan | null { return Koolkan._instance; }
+
     /** Current state at runtime. -1 sentinel so the first setState() always applies. */
     private _state: KoolkanState = -1 as KoolkanState;
     /** Accumulated energy from prayer spirits; reaching `wakeEnergy` wakes him (Sleeping → Floating). */
@@ -134,6 +138,7 @@ export class Koolkan extends Component {
     private readonly _glowOff = new Color(255, 255, 255, 0);  // glowColor with .a=0 → kills any inner glow
 
     onLoad(): void {
+        Koolkan._instance = this;
         // Capture the editor-authoritative pose once; the float oscillates around it.
         this._basePos.set(this.node.position);
         this._baseScale.set(this.node.scale);
@@ -334,6 +339,7 @@ export class Koolkan extends Component {
     }
 
     onDestroy(): void {
+        if (Koolkan._instance === this) Koolkan._instance = null;
         this._recoilTween?.stop();
         this._recoilTween = null;
         this._riseTween?.stop();

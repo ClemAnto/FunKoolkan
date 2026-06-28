@@ -1,7 +1,8 @@
-import { _decorator, Component, Vec3, Color, RigidBody2D, UIOpacity, tween } from 'cc';
+import { _decorator, Component, Vec2, Vec3, Color, RigidBody2D, CircleCollider2D, Collider2D, Contact2DType, UIOpacity, tween } from 'cc';
 import { Stone } from './Stone';
 import { Glue } from './Glue';
 import { ManaLightning } from './ManaLightning';
+import { RaisingStar } from './RaisingStar';
 
 const { ccclass } = _decorator;
 
@@ -11,39 +12,78 @@ const NEIGHBOUR_GAP = 0.6;   // a rune is a neighbour if its edge-to-edge gap is
 const ARM_SPEED = 25;        // it must have actually flown (above this) before a settle can fire
 const REST_SPEED = 12;       // settled once the body's speed stays under this…
 const REST_DELAY = 0.18;     // …for this long (s) — the rune has come to rest in the blob
-const MAX_WAIT = 1.8;        // safety: trigger anyway this long after arming, even if the blob keeps it jiggling
-const FADE_TIME = 0.4;       // fizzle: fade the overpower rune out over this (s) when it lands off-colour
+const MAX_WAIT = 3.0;        // safety: detonate anyway this long after arming (a boosted rune ricochets a while)
+const FADE_TIME = 0.4;       // fizzle: fade the rune out over this (s) when it lands off-colour
+const INITIAL_BOOST = 35;    // speed (ground u/s) added along the current direction when ignited; HALVES each use
 const SHOCK_FLASH = new Color(255, 255, 255, 255);   // white wash as the shock reaches each rune
+const FLAME_COLOR = new Color(255, 150, 40, 255);    // inflamed throb on the lit rune (warm orange)
+const IGNITE_FLASH = new Color(190, 245, 255, 255);  // white/cyan pop the instant the rune ignites in the flame
+const _bv = new Vec2();      // scratch for boosted velocity (set-then-assign)
 
 /** One step of the chain: a bolt from `fromPos` (the rune that passes the shock on) to `target`, fired at `time`
- *  seconds into the cascade. `fromPos` is null for the root (the overpower rune itself — it has no incoming bolt). */
+ *  seconds into the cascade. `fromPos` is null for the root (the lit rune itself — it has no incoming bolt). */
 interface Hop { fromPos: Vec3 | null; toPos: Vec3; target: Stone; time: number; }
 
 /**
- * OVERPOWER shot (GameMode.stickyPrototype) — the launcher's overcharge spawns this ALONGSIDE a normal Glue
- * (Stone.spawn adds both): so it flies in and STICKS to the blob like any rune, compacting into it. Then, the
- * moment it has come to REST, it "activates": if it is touching at least one rune of its OWN colour it detonates
- * the whole CONTIGUOUS same-colour cluster; if it landed where no same-colour rune touches it, it simply FIZZLES
- * (fades out), no explosion. It never becomes a star.
+ * OVERPOWER / inflamed-rune behaviour (GameMode.stickyPrototype). NOT spawned directly: a ManaFlame adds this
+ * to a normal (Glue) rune the instant the rune flies THROUGH the flame — see ManaFlame. On ignite the rune gets
+ * a SPEED BOOST along its current heading, and ANOTHER (halved) boost on every wall bounce, so it ricochets
+ * faster and faster. It still sticks/compacts like a normal rune; once it has come to REST it detonates the
+ * contiguous same-colour cluster it landed in — or FIZZLES if it landed off-colour. It never becomes a star.
  *
- * The detonation is a CHAIN, not a fan-out: the shock starts at the overpower rune and PROPAGATES rune→rune
- * outward (BFS over same-colour neighbours), each hop a ManaLightning bolt from the rune that carries the shock
- * to the next one, scattered in time by depth. Each rune shatters just after the bolt reaches it.
+ * The detonation is a CHAIN: the shock starts at the lit rune and PROPAGATES rune→rune outward (BFS over
+ * same-colour neighbours), each hop a ManaLightning bolt from the rune that carries the shock to the next one.
  */
 @ccclass('Overpower')
 export class Overpower extends Component {
-    /** Collider radius in ground px (set at spawn). */
+    /** Collider radius in ground px (set when armed). */
     radius = 24;
     private _done = false;
     private _armed = false;       // has actually flown (so a settle isn't detected at spawn)
     private _restDwell = 0;       // time spent below REST_SPEED
     private _sinceArmed = 0;      // time since arming (the MAX_WAIT safety)
     private _rb: RigidBody2D | null = null;
+    private _boost = 0;           // remaining boost magnitude; halves on each use (ignite + each bounce)
+    private _bouncePending = false;   // a wall bounce was registered → apply a (halved) boost next frame
+    private _col: Collider2D | null = null;
+
+    /** Ignite (called by the ManaFlame): give the first speed boost along the current heading, throb the rune
+     *  orange, and start listening for wall bounces (each grants another, halved boost). */
+    ignite(): void {
+        if (!this._rb) this._rb = this.getComponent(RigidBody2D);
+        const stone = this.getComponent(Stone);
+        stone?.flashWhite(IGNITE_FLASH, 1, 0.06, 0.22);   // white/cyan pop the instant it ignites
+        // then carry the inflamed throb (after the flash, so they don't fight over the flash channel)
+        this.scheduleOnce(() => { if (stone?.isValid) stone.flashPulse(FLAME_COLOR, 0.3, 0.2, 10); }, 0.3);
+        this._boost = INITIAL_BOOST;
+        this._applyBoost();
+        this._col = this.getComponent(CircleCollider2D);
+        this._col?.on(Contact2DType.BEGIN_CONTACT, this._onContact, this);
+    }
+
+    /** Add the current boost along the body's heading, then halve it for next time. */
+    private _applyBoost(): void {
+        const rb = this._rb;
+        if (!rb || this._boost <= 0) return;
+        const v = rb.linearVelocity, sp = Math.hypot(v.x, v.y);
+        if (sp < 1) return;
+        rb.linearVelocity = _bv.set(v.x + v.x / sp * this._boost, v.y + v.y / sp * this._boost);
+        this._boost *= 0.5;
+    }
+
+    /** A contact with anything that is NOT a blob rune (a wall / the launcher body) = a bounce → boost next frame
+     *  (after Box2D has reflected the velocity, so the boost follows the new heading). Blob contacts are left to
+     *  Glue (sticking) and end the flight. */
+    private _onContact(_self: Collider2D, other: Collider2D | null): void {
+        if (other?.getComponent(Stone)) return;   // hit the blob → not a bounce; let it stick/settle
+        this._bouncePending = true;
+    }
 
     update(dt: number): void {
         if (this._done) return;
         if (!this._rb) this._rb = this.getComponent(RigidBody2D);
         if (!this._rb) return;
+        if (this._bouncePending) { this._bouncePending = false; this._applyBoost(); }   // post-bounce re-boost
         const v = this._rb.linearVelocity, sp2 = v.x * v.x + v.y * v.y;
         if (sp2 > ARM_SPEED * ARM_SPEED) { this._armed = true; this._restDwell = 0; }
         if (!this._armed) return;
@@ -56,13 +96,13 @@ export class Overpower extends Component {
     private _settle(): void {
         this._done = true;
         const type = this.getComponent(Glue)?.gemType ?? -1;
-        const chain = this._buildChain(type);          // BFS from this rune, root first then outward
-        if (chain.length > 1) this._detonate(chain);   // at least one same-colour rune is touching → boom
-        else this._fizzle();                            // landed off-colour → fade away, no explosion
+        const chain = this._buildChain(type);                // BFS from this rune, root first then outward
+        if (chain.length > 1) this._detonate(chain, type);   // at least one same-colour rune is touching → boom
+        else this._fizzle();                                  // landed off-colour → fade away, no explosion
     }
 
-    /** BFS the same-colour cluster from this overpower rune, recording each hop: which rune passes the shock to
-     *  which, and WHEN (depth × HOP_STEP). World positions are captured NOW (the blob is at rest) so a bolt stays
+    /** BFS the same-colour cluster from this lit rune, recording each hop: which rune passes the shock to which,
+     *  and WHEN (depth × HOP_STEP). World positions are captured NOW (the blob is at rest) so a bolt stays
      *  correct even once its source rune has already shattered. */
     private _buildChain(type: number): Hop[] {
         const self = this.getComponent(Stone);
@@ -92,25 +132,37 @@ export class Overpower extends Component {
     }
 
     /** Play the chain: at each hop fire the bolt from its source rune to the struck rune, flash it white, then
-     *  shatter it a beat later. The overpower rune (root) has no incoming bolt — it just flashes and pops. No star. */
-    private _detonate(chain: Hop[]): void {
+     *  a beat later the rune POPS into a star that flies into Koolkan (RaisingStar). If no RaisingStar/Koolkan is
+     *  available it just shatters. The lit rune (root) has no incoming bolt — it flashes and becomes a star too. */
+    private _detonate(chain: Hop[], type: number): void {
         const lit = ManaLightning.instance;
         for (let i = 0; i < chain.length; i++) {
             const hop = chain[i];
             this.scheduleOnce(() => {
                 if (hop.fromPos && lit?.isValid) lit.strike(hop.fromPos, hop.toPos);
-                if (hop.target.isValid) hop.target.flashWhite(SHOCK_FLASH, 0.8, 0.08);
-                this.scheduleOnce(() => { if (hop.target.isValid) hop.target.shatter(); }, AB_DELAY);
+                if (!hop.target.isValid) return;
+                hop.target.flashWhite(SHOCK_FLASH, 0.8, 0.08);
+                this.scheduleOnce(() => {
+                    if (!hop.target.isValid) return;
+                    const rs = RaisingStar.instance;
+                    if (rs) rs.launchAtKoolkan(hop.target, type);   // pop → star → flies into Koolkan
+                    else hop.target.shatter();                       // no RaisingStar wired → just shatter
+                }, AB_DELAY);
             }, hop.time);
         }
     }
 
-    /** Fizzle: the overpower landed where no same-colour rune touches it → fade out gently and vanish (no boom). */
+    /** Fizzle: the rune landed where no same-colour rune touches it → fade out gently and vanish (no boom). */
     private _fizzle(): void {
         const view = this.getComponent(Stone)?.viewNode;
         if (!view?.isValid) { if (this.node?.isValid) this.node.destroy(); return; }
         const op = view.getComponent(UIOpacity) ?? view.addComponent(UIOpacity);
         tween(op).to(FADE_TIME, { opacity: 0 }, { easing: 'quadIn' })
             .call(() => { if (this.node?.isValid) this.node.destroy(); }).start();
+    }
+
+    onDestroy(): void {
+        this._col?.off(Contact2DType.BEGIN_CONTACT, this._onContact, this);
+        this._col = null;
     }
 }

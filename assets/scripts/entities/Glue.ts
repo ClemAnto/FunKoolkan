@@ -18,6 +18,8 @@ const SCOSSA_GAP = 3;         // surface-surface ground px at/under which two st
 const STICKY_MAGNET_REACH = 1.5;   // magnet reaches this × the rune's radius (edge-to-edge) toward a neighbour
 const STICKY_MAGNET_FORCE = 150;   // peak pull (when nearly touching), easing to 0 at the reach edge; same force
                                    // scale as a bond spring (cohesion×distance ≈ hundreds). 0 = magnet off. MAIN KNOB.
+const STICKY_BOND_MIN = 0.9;       // bond rest length = this × (r+r): <1 pulls the pair slightly TIGHTER than
+                                   // collider-touching (lets the solver close the visual gap from the anisotropic perspective)
 
 /** One elastic bond: an anchor + the stone's ORIGINAL offset from it (the rest position) + the break length. */
 interface Bond { anchor: Glue; ox: number; oy: number; maxLen: number; }
@@ -120,7 +122,7 @@ export class Glue extends Component {
                 // touching → bond (up to MAX_BONDS); no magnet here (avoids the contact jitter)
                 if (this._bonds.length < MAX_BONDS && !this._bondedTo(a)) {
                     const dx0 = this._gx() - a._gx(), dy0 = this._gy() - a._gy(), len0 = Math.hypot(dx0, dy0) || 1;
-                    const minLen = this.radius + a.radius;   // rest = touching, at the angle of first contact
+                    const minLen = (this.radius + a.radius) * STICKY_BOND_MIN;   // rest = touching (× factor: a touch tighter)
                     this._bonds.push({ anchor: a, ox: dx0 / len0 * minLen, oy: dy0 / len0 * minLen,
                                        maxLen: minLen * Math.max(1.05, this.maxStretch) });
                 }
