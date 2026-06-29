@@ -24,8 +24,8 @@ export class LaunchClearZone extends Component {
     radius = 130;
     @property({ tooltip: 'Shift the zone centre this many GROUND px IN FRONT of the launcher (+ = toward the field).' })
     forwardOffset = 50;
-    @property({ tooltip: 'Draw the zone on the floor for tuning (also shown by the global DEBUG toggle).' })
-    showDebug = true;
+    @property({ tooltip: 'Draw the zone on the floor for tuning. Off by default — the zone is shown only when the global DEBUG toggle is on.' })
+    showDebug = false;
 
     private _dbg: Graphics | null = null;
 

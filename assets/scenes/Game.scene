@@ -5960,6 +5960,7 @@
     "stoneViewScale": 0.575,
     "minDrag": 50,
     "maxDrag": 280,
+    "dragStartRadius": 380,
     "bombDragFactor": 1.3,
     "bowFollowFactor": 0.7,
     "trajectoryLength": 400,

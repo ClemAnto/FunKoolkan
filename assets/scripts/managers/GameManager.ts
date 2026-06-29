@@ -3,11 +3,12 @@ import { StoneExplosion } from '../entities/StoneExplosion';
 import { GameMode } from '../config/GameMode';
 import { ManaFlame } from '../entities/ManaFlame';
 import { LaunchClearZone } from '../entities/LaunchClearZone';
+import { AudioManager } from './AudioManager';
 
 const { ccclass } = _decorator;
 
 /** Game version — keep aligned with package.json (see CLAUDE.md §Versioning). */
-export const VERSION = '0.2.11';
+export const VERSION = '0.2.12';
 
 /**
  * FunKoolkan game manager — PLACEHOLDER (intentionally near-empty).
@@ -41,6 +42,7 @@ export class GameManager extends Component {
     }
     start(): void {
         console.log(`[FunKoolkan] v${VERSION} — GameManager placeholder (legacy warrior engine removed).`);
+        AudioManager.instance.stopMusic();   // no background music during gameplay (the menu loop persists across scenes)
         // Sticky prototype: auto-install the ManaFlame detonator director (zero editor wiring — it resolves the
         // launcher/arena via StoneLauncher.instance). The getComponent guard avoids a duplicate on this node.
         if (GameMode.stickyPrototype && !this.getComponent(ManaFlame)) this.addComponent(ManaFlame);

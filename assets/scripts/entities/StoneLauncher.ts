@@ -109,6 +109,8 @@ export class StoneLauncher extends Component {
     minDrag = 24;
     @property({ type: CCFloat, tooltip: 'Aim distance (arena-local px) that reaches full power.' })
     maxDrag = 300;
+    @property({ type: CCFloat, tooltip: 'Radius (arena-local px) of the circular area below the arena where the FIRST touch may START a drag. The pull is still measured from the launcher; touching anywhere in this bubble begins aiming. 0 = only the launcher hit box.' })
+    dragStartRadius = 380;
     @property({ type: CCFloat, slide: true, range: [1, 2, 0.05], tooltip: 'BOMB overcharge: pull PAST full power by this × maxDrag to launch a bomb (1 = right at full power, 1.3 = 30% extra pull). Power itself stays capped at full.' })
     bombDragFactor = 1.3;
     @property({ type: CCFloat, slide: true, range: [0, 1, 0.05], tooltip: 'How much the bow arm follows the aim (1 = full, 0.5 = half).' })
@@ -432,7 +434,7 @@ export class StoneLauncher extends Component {
         if (this._suspended || this._launching) return;   // another mode owns input, or mid launch-departure → inert
         if (!this._loadedReady()) return;        // no stone ready/visible on the launcher (reloading, or mid pop) → can't aim yet (no spam)
         if (this.onAimPress?.(x, y)) return;     // consumed by the coordinator (e.g. tap on NEXT → swap)
-        if (!this._hitLauncher(x, y)) return;    // arm ONLY when the FIRST touch is ON the launcher (a tap/drag starting elsewhere is ignored; a pure click never reaches minDrag → never fires)
+        if (!this._inDragArea(x, y)) return;     // arm when the FIRST touch is anywhere in the circular drag area below the arena
         this._aiming = true; this._cur.set(x, y);
         this._path = []; this._trajAlpha = 0;    // fresh aim: starts as an invalid (zero-drag) pose, eases in as you pull
         this._resim();
@@ -464,12 +466,17 @@ export class StoneLauncher extends Component {
     private static _lastFired: Stone | null = null;
     static get lastFired(): Stone | null { return StoneLauncher._lastFired; }
 
-    /** True if a UI point lands on the launcher's hit box (its UITransform). The launcher arms only
-     *  when the first touch is on it — mirrors NextPreview.containsUIPoint (UI-world AABB test). */
-    private _hitLauncher(uiX: number, uiY: number): boolean {
-        const ut = this.node.getComponent(UITransform);
-        if (!ut) return true;   // no hit box authored → don't gate
-        return ut.getBoundingBoxToWorld().contains(_hitPt.set(uiX, uiY));
+    /** True if a UI point lands within the circular DRAG-START area: a bubble of radius dragStartRadius
+     *  (arena-local) around the launcher, so the first touch may start a drag anywhere below the arena, not just
+     *  on the launcher hit box. The pull is still measured from the launcher (see _pull). dragStartRadius ≤ 0
+     *  falls back to the launcher's own UITransform hit box. */
+    private _inDragArea(uiX: number, uiY: number): boolean {
+        if (this.dragStartRadius <= 0) {
+            const ut = this.node.getComponent(UITransform);
+            return !ut || ut.getBoundingBoxToWorld().contains(_hitPt.set(uiX, uiY));
+        }
+        const pull = this._pull(uiX, uiY);   // touch → arena-local offset from the launcher
+        return pull.x * pull.x + pull.y * pull.y <= this.dragStartRadius * this.dragStartRadius;
     }
 
     private _updateAim(x: number, y: number): void { if (!this._aiming) return; this._cur.set(x, y); this._resim(); }

@@ -166,7 +166,7 @@
     "lifeVar": 0.1,
     "angle": 90,
     "angleVar": 180,
-    "startSize": 16,
+    "startSize": 32,
     "startSizeVar": 6,
     "endSize": 2,
     "endSizeVar": 0,
@@ -181,8 +181,8 @@
     },
     "posVar": {
       "__type__": "cc.Vec2",
-      "x": 3,
-      "y": 3
+      "x": 10,
+      "y": 10
     },
     "emitterMode": 0,
     "gravity": {
@@ -194,8 +194,8 @@
     "speedVar": 60,
     "tangentialAccel": 0,
     "tangentialAccelVar": 0,
-    "radialAccel": -120,
-    "radialAccelVar": 40,
+    "radialAccel": 0,
+    "radialAccelVar": 0,
     "rotationIsDir": false,
     "startRadius": 0,
     "startRadiusVar": 0,
@@ -242,7 +242,7 @@
       "b": 0,
       "a": 0
     },
-    "_positionType": 2,
+    "_positionType": 0,
     "_id": ""
   },
   {
