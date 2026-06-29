@@ -97,7 +97,8 @@ export class Glue extends Component {
     update(): void {
         if (!this._pole) {                       // poles are passive anchors; stones bond + are reeled in
             if (GameMode.stickyPrototype) this._updateBondsSticky();
-            else this._updateBonds();
+            else if (GameMode.curling) this._updateBonds();
+            // akuArena: runes are inert — no gluing at all (they just rest by physics as obstacles)
         }
         if (Glue.debugAll || DebugDraw.enabled) this._drawDebug(); else if (this._dbg?.isValid) this._dbg.clear();
     }
@@ -204,7 +205,7 @@ export class Glue extends Component {
 
     /** Once per frame (guarded), regardless of how many glues call it. */
     lateUpdate(): void {
-        if (GameMode.stickyPrototype) return;   // sticky prototype: no pole-circuit solve / auto-discharge (Overpower handles detonation)
+        if (!GameMode.curling) return;   // pole-circuit solve / auto-discharge lives ONLY in the curling core
         const f = director.getTotalFrames();
         if (f === Glue._solvedFrame) return;
         Glue._solvedFrame = f;

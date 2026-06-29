@@ -3,7 +3,7 @@ import { EDITOR } from 'cc/env';
 import { Column } from './Column';
 import { AkuAkuSpawner } from './AkuAkuSpawner';
 import { ArenaManager } from '../managers/ArenaManager';
-import { Koolkan } from './Koolkan';
+import { Koolkan, KoolkanState } from './Koolkan';
 import { House } from './House';
 import { EndPanel } from '../managers/EndPanel';
 import { PrayerSpirit } from './PrayerSpirit';
@@ -94,8 +94,9 @@ export class RoundManager extends Component {
     }
 
     start(): void {
-        this.resetGame();   // sticky prototype: just empty the columns; no rounds / Aku / Koolkan loop
-        if (AUTO_START && !GameMode.stickyPrototype) this.startRound();
+        this.resetGame();   // empty the columns; the per-round column/Aku-climb loop runs ONLY in the curling core
+        if (AUTO_START && GameMode.curling) this.startRound();
+        if (GameMode.akuArena) AkuAkuSpawner.beginAllWaves();   // aku-arena: release the first Aku wave
     }
 
     /** Full reset to pre-game state: empty every column (and any other per-round element). */
@@ -163,7 +164,9 @@ export class RoundManager extends Component {
     }
 
     update(dt: number): void {
-        if (EDITOR || GameMode.stickyPrototype || this._over || this._round <= 0) return;
+        if (EDITOR || this._over) return;
+        if (GameMode.akuArena) { this._tickAkuArena(); return; }   // aku-arena core: Koolkan waking = game over
+        if (GameMode.stickyPrototype || this._round <= 0) return;
         this._tickStarvation(dt);                          // anti-stall: empty house for too long → game over
         if (this._roundReady) this._checkRoundCleared();   // all columns empty → level passed (off during clear→fill)
         // Aku-on-column refill
@@ -190,7 +193,20 @@ export class RoundManager extends Component {
         this._over = true;
         console.log(`[RoundManager] GAME OVER${reason ? ` — ${reason}` : ''}`);
         this.unscheduleAllCallbacks();                       // drop pending column fills / Aku waves
+        AkuAkuSpawner.setAllRunning(false);                  // stop popping new Aku-aku out of the hole
         this.endPanel?.show(0, this._round, 0, false);       // TODO: real score/best; freeze launcher + rune spawn; PortalSdk.gameplayStop()
+    }
+
+    /** Aku-arena core: the Aku-aku prayers feed Koolkan's wake-gauge (PrayerSpirit → addEnergy). The instant he
+     *  WAKES (leaves Sleeping) the ritual has succeeded → GAME OVER. */
+    private _tickAkuArena(): void {
+        const k = this.koolkan;
+        if (k && k.state !== KoolkanState.Sleeping) { this.gameOver('Koolkan awoke — the Aku-aku completed the ritual'); return; }
+        if (AkuAkuSpawner.allWavesCleared()) {   // every Aku of the wave eliminated → restart the round "da capo"
+            console.log('[RoundManager] all Aku-aku eliminated — round restarts');
+            this.koolkan?.resetEnergy();          // wake-gauge back to empty
+            AkuAkuSpawner.beginAllWaves();
+        }
     }
 
     /** ROUND UP: once this round's cubes have appeared and are ALL then cleared, the level is passed. (For now we

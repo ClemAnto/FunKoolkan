@@ -58,7 +58,7 @@ export class House extends Component {
     }
 
     update(): void {
-        if (GameMode.stickyPrototype) { if (this._dbg?.isValid) this._dbg.clear(); return; }   // curling off in the sticky prototype (no house/tee, no debug)
+        if (!GameMode.curling) { if (this._dbg?.isValid) this._dbg.clear(); return; }   // house/tee detection lives ONLY in the curling core
         if (physicsDepth() <= 0) return;   // perspective not configured yet (ArenaBounds builds it on start)
         this._refresh(this._house, this.house);
         this._refresh(this._tee, this.tee);

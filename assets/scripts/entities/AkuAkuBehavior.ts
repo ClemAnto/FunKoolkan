@@ -9,6 +9,8 @@ import { physicsWidth, physicsDepth, unprojectX, unprojectY } from '../config/Pe
 const { ccclass, property, disallowMultiple, requireComponent, menu } = _decorator;
 
 const WANDER_INSET = 120;   // ground px kept from the edges when choosing a free zone (> the edge-kill band)
+const EDGE_HOPS = 3;        // little hops from the hole to the arena border on entry
+const EDGE_INSET = 16;      // ground px the border entry point sits inside the arena edge (so it stays on-screen)
 const HIT_COOLDOWN = 0.5;   // s of immunity after a hit so one bump = one hit (not a burst of contacts)
 const ORANGE = new Color(255, 170, 60, 255);
 
@@ -30,9 +32,9 @@ enum Ai { Off, ToZone, Settling, Praying }
  *   1) pick a FREE zone of the arena (clear of the other Aku-aku + stones),
  *   2) hop there (~`moveHops` hops, facing the travel direction),
  *   3) after `danceDelay` s, start the wake ritual (prayer: purple inner glow + rising bubbles),
- *   4) a moving rune hits it → −1 HP + small hop + orange flash → back to step 1,
- *   5) shoved onto/over the arena edge → eliminated (kicked out of the stadium),
- *   6) HP reaches 0 → same elimination as step 5.
+ *   4) a rune hits it — a STRONG hit (≥ strongHitSpeed) → eliminated (kicked off the cliff); a WEAK hit → small
+ *      hop + orange flash, then it goes to find a new spot (back to step 1),
+ *   5) shoved onto/over the arena edge → eliminated (kicked out of the stadium).
  */
 @ccclass('AkuAkuBehavior')
 @disallowMultiple
@@ -41,8 +43,8 @@ enum Ai { Off, ToZone, Settling, Praying }
 export class AkuAkuBehavior extends Component {
     @property({ type: CCFloat, tooltip: 'Seconds resting on a free zone before the wake ritual (prayer) starts.' })
     danceDelay = 2;
-    @property({ type: CCInteger, formerlySerializedAs: 'maxHits', tooltip: 'Hit points: each rune hit removes 1; at 0 the Aku-aku is eliminated (kicked out of the stadium).' })
-    hp = 1;
+    @property({ type: CCFloat, tooltip: 'A rune impact at or above this speed (physics u/s) ELIMINATES the Aku-aku (kicked off the cliff). A slower (weak) hit just makes it hop and move to a new spot. Full-power launch ≈ 150, but the rune slows a lot before the far end (linearDamping 0.5), so keep this low; a hit below 35 does nothing.' })
+    strongHitSpeed = 50;
     @property({ type: CCInteger, tooltip: 'Roughly how many hops it takes to reach a chosen free zone.' })
     moveHops = 3;
 
@@ -54,7 +56,7 @@ export class AkuAkuBehavior extends Component {
     private _aku: AkuAku | null = null;
     private _state = Ai.Off;
     private _timer = 0;
-    private _hp = 0;            // current hit points (set to `hp` on spawn; −1 per hit; ≤0 → eliminated)
+    private _impactSpeed = 0;   // speed (physics u/s) of the rune that last hit — strong vs weak classification
     private _cooldown = 0;
     private _impact = false;
     private _impactDirX = 0;    // horizontal travel sign of the last rune that hit (drives the eliminate direction)
@@ -85,12 +87,14 @@ export class AkuAkuBehavior extends Component {
         const aku = this._aku;
         if (!aku) return;
         this._columnMode = false; this._perchedActive = false;
-        this._hp = Math.max(1, Math.floor(this.hp)); this._cooldown = 0; this._impact = false; this._state = Ai.Off;
+        this._cooldown = 0; this._impact = false; this._state = Ai.Off;
         aku.reset();
-        aku.onImpact = (_other, dirX) => { this._impact = true; this._impactDirX = dirX; };
+        aku.onImpact = (_other, dirX, speed) => { this._impact = true; this._impactDirX = dirX; this._impactSpeed = speed; };
         aku.onGone = () => this.onGone?.();                  // any death (cliff dive or star-zap) → free the slot + pool
         aku.configure(arena, gx, gy);
-        aku.emerge(() => { aku.attachPhysics(); this._beginWander(); });   // body attached AFTER the emerge hop
+        // Entrance: emerge at the hole (NO body yet) → hop to the arena border → one hop INTO the arena, where the
+        // physics body is created (it becomes hittable as it lands in play) → then the usual free-zone wander.
+        aku.emerge(() => this._enterFromHole());
     }
 
     /** Column spawn entry (called by the spawner via RoundManager): pop out of the hole, hold 0.5s, hop over to
@@ -100,7 +104,7 @@ export class AkuAkuBehavior extends Component {
         const aku = this._aku;
         if (!aku) return;
         this._columnMode = true; this._column = column; this._arena = arena; this._perchedActive = false; this._prayClock = 0;
-        this._hp = Math.max(1, Math.floor(this.hp)); this._cooldown = 0; this._impact = false; this._state = Ai.Off;
+        this._cooldown = 0; this._impact = false; this._state = Ai.Off;
         aku.reset();
         aku.onGone = () => this.onGone?.();
         aku.configure(arena, gx, gy);
@@ -123,7 +127,9 @@ export class AkuAkuBehavior extends Component {
         if (this._impact) { this._impact = false; this._onHit(); return; }
         if (this._state === Ai.Settling) {
             this._timer -= dt;
-            if (this._timer <= 0) { aku.pray(); this._state = Ai.Praying; }   // step 3: the wake ritual (purple glow + bubbles)
+            if (this._timer <= 0) { aku.pray(); this._state = Ai.Praying; this._prayClock = 0; }   // step 3: the wake ritual (purple glow + bubbles)
+        } else if (this._state === Ai.Praying) {
+            this._tickPrayerSpirit(dt);   // feed Koolkan's wake-gauge while it prays in the arena
         }
     }
 
@@ -135,6 +141,41 @@ export class AkuAkuBehavior extends Component {
         const z = this._findFreeZone();
         this._state = Ai.ToZone;
         aku.moveTo(z.x, z.y, () => { this._state = Ai.Settling; this._timer = this.danceDelay; }, this.moveHops);
+    }
+
+    /** Entrance step 1: from the hole, hop (a few little jumps) to the nearest arena BORDER on the hole's side. */
+    private _enterFromHole(): void {
+        const aku = this._aku;
+        if (!aku) return;
+        this._impact = false;
+        this._state = Ai.ToZone;                       // travelling — update runs, but edge-kill is gated to Settling/Praying
+        const e = this._edgePoint();
+        aku.moveTo(e.x, e.y, () => this._hopIntoArena(), EDGE_HOPS);
+    }
+
+    /** Entrance step 2: ONE hop inward into the playfield — and create the physics body NOW (it enters play here
+     *  and becomes hittable). On landing, the normal free-zone wander takes over. */
+    private _hopIntoArena(): void {
+        const aku = this._aku;
+        if (!aku) return;
+        aku.attachPhysics();                           // body created as it leaps in → from now it collides / can be hit
+        const inn = this._entryPoint();
+        aku.moveTo(inn.x, inn.y, () => this._beginWander(), 1);
+    }
+
+    /** A point on the arena border on the hole's side, at the hole's depth (a hair inside, so it stays on-screen). */
+    private _edgePoint(): { x: number; y: number } {
+        const aku = this._aku!, W = physicsWidth(), D = physicsDepth();
+        const side = aku.groundX >= 0 ? 1 : -1;
+        return { x: side * Math.max(0, W / 2 - EDGE_INSET), y: Math.max(EDGE_INSET, Math.min(D - EDGE_INSET, aku.groundY)) };
+    }
+
+    /** A point just INSIDE the playfield (clear of the edge-kill band) on the hole's side — the landing of the
+     *  inward hop, from which the free-zone wander begins. */
+    private _entryPoint(): { x: number; y: number } {
+        const aku = this._aku!, W = physicsWidth(), D = physicsDepth();
+        const side = aku.groundX >= 0 ? 1 : -1;
+        return { x: side * Math.max(0, W / 2 - WANDER_INSET), y: Math.max(WANDER_INSET, Math.min(D - WANDER_INSET, aku.groundY)) };
     }
 
     // ── Column climb-and-pray sequence (chained callbacks) ──────────────────────────────────────────────
@@ -176,23 +217,7 @@ export class AkuAkuBehavior extends Component {
         const aku = this._aku, col = this._column;
         if (!aku?.alive || !col?.node?.isValid) return;
 
-        // Prayer spirit: every PRAYER_SPIRIT_INTERVAL s of UNINTERRUPTED prayer, emit one toward Koolkan. The
-        // clock only runs while actually praying; anything that breaks the prayer (re-align is fine, but a hit /
-        // eliminate stops it) resets it.
-        if (aku.praying) {
-            this._prayClock += dt;
-            if (this._prayClock >= PRAYER_SPIRIT_INTERVAL) {
-                this._prayClock = 0;
-                if (this.prayerSpirit) {
-                    console.log(`[AkuAkuBehavior] prayed ${PRAYER_SPIRIT_INTERVAL}s → emitting a spirit toward Koolkan`);
-                    this.prayerSpirit.launch(aku.headWorld(_wv));   // born at the Aku's head
-                } else {
-                    console.warn('[AkuAkuBehavior] prayerSpirit not assigned — no spirit emitted');
-                }
-            }
-        } else {
-            this._prayClock = 0;
-        }
+        this._tickPrayerSpirit(dt);   // feed Koolkan's wake-gauge while it prays on the column
 
         const top = col.topLiveCube();
         if (!top) { this._perchedActive = false; this._eliminate(0); return; }   // column cleared → falls
@@ -201,6 +226,24 @@ export class AkuAkuBehavior extends Component {
         const ut = top.node.getComponent(UITransform);
         this._perchOffsetY = ut ? ut.contentSize.height * Math.abs(top.node.worldScale.y) * 0.5 : 0;
         aku.reperchTo(top.node, this._perchOffsetY);
+    }
+
+    /** The resolved prayer-spirit emitter: the one assigned by the spawner, or any scene PrayerSpirit wired to
+     *  Koolkan (so the wake-gauge feeds even with no per-spawner wiring). */
+    private _emitter(): PrayerSpirit | null { return this.prayerSpirit ?? PrayerSpirit.instance; }
+
+    /** While the Aku is actually praying, accumulate uninterrupted-prayer time and emit one spirit toward Koolkan
+     *  every PRAYER_SPIRIT_INTERVAL s (the wake-gauge feed). A hit / eliminate breaks the prayer → the clock
+     *  resets. Shared by the free-wander loop and the column-perch loop. */
+    private _tickPrayerSpirit(dt: number): void {
+        const aku = this._aku;
+        if (!aku?.praying) { this._prayClock = 0; return; }
+        this._prayClock += dt;
+        if (this._prayClock < PRAYER_SPIRIT_INTERVAL) return;
+        this._prayClock = 0;
+        const em = this._emitter();
+        if (em) { console.log(`[AkuAkuBehavior] prayed ${PRAYER_SPIRIT_INTERVAL}s → emitting a spirit toward Koolkan`); em.launch(aku.headWorld(_wv)); }
+        else console.warn('[AkuAkuBehavior] no PrayerSpirit emitter (assign one on the spawner or add a PrayerSpirit wired to Koolkan) — no spirit emitted');
     }
 
     /** Ground point at the foot of `column`: its world position de-projected into the arena's flat ground space. */
@@ -212,16 +255,16 @@ export class AkuAkuBehavior extends Component {
         return { x: unprojectX(_wv.x, _wv.y), y: unprojectY(_wv.y) };
     }
 
-    /** A hit: −1 HP. Still alive → orange hop + re-wander. HP hits 0 → eliminated (kicked out of the stadium). */
+    /** A rune hit, classified by impact speed: a STRONG hit (≥ strongHitSpeed) eliminates it (kicked off the
+     *  cliff, flying the way the rune was going); a WEAK hit just makes it hop, then go find a new spot. */
     private _onHit(): void {
         if (this._cooldown > 0) return;
         const aku = this._aku;
         if (!aku) return;
         this._cooldown = HIT_COOLDOWN;
-        this._hp--;
-        if (this._hp <= 0) { this._eliminate(this._impactDirX); return; }   // fly off the way the rune was going
-        this._state = Ai.Off;                                   // suspend the AI during the recoil...
-        aku.hit(ORANGE, () => this._beginWander());             // ...then back to step 1
+        if (this._impactSpeed >= this.strongHitSpeed) { this._eliminate(this._impactDirX); return; }   // strong → off the cliff
+        this._state = Ai.Off;                                   // weak: suspend the AI during the recoil hop...
+        aku.hit(ORANGE, () => this._beginWander());             // ...then re-wander to a new free zone
     }
 
     private _eliminate(dirX = 0): void {

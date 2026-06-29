@@ -2,6 +2,7 @@ import { _decorator, Component, view, ResolutionPolicy } from 'cc';
 import { StoneExplosion } from '../entities/StoneExplosion';
 import { GameMode } from '../config/GameMode';
 import { ManaFlame } from '../entities/ManaFlame';
+import { LaunchClearZone } from '../entities/LaunchClearZone';
 
 const { ccclass } = _decorator;
 
@@ -43,5 +44,7 @@ export class GameManager extends Component {
         // Sticky prototype: auto-install the ManaFlame detonator director (zero editor wiring — it resolves the
         // launcher/arena via StoneLauncher.instance). The getComponent guard avoids a duplicate on this node.
         if (GameMode.stickyPrototype && !this.getComponent(ManaFlame)) this.addComponent(ManaFlame);
+        // Aku-arena: keep the launch muzzle clear — runes that drift/bounce into the bubble are pulverised.
+        if (GameMode.akuArena && !this.getComponent(LaunchClearZone)) this.addComponent(LaunchClearZone);
     }
 }

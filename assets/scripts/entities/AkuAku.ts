@@ -2,6 +2,7 @@ import { _decorator, Component, Node, Vec2, Vec3, Vec4, UIOpacity, Sprite, Mater
 import { EDITOR } from 'cc/env';
 import { physicsDepth, physicsWidth, projectX, projectY, sizeXFactor, floorTilt, unprojectY } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
+import { GameMode } from '../config/GameMode';
 import { Stone } from './Stone';
 
 const FOOTPRINT_SCALE = 0.8;   // physics body radius as a fraction of the sprite half-width (a touch smaller than the art)
@@ -196,9 +197,10 @@ export class AkuAku extends Component {
      *  A prefab can't hold a scene-node ref, so this is injected at runtime. Null → it stays in its layer. */
     background: Node | null = null;
 
-    /** Fired when a moving RUNE collides with the physics body (set by the behaviour). Passes the rune node and
-     *  its horizontal travel sign (+1 right / −1 left) so the eliminate can fly the Aku-aku the same way. */
-    onImpact: ((other: Node, dirX: number) => void) | null = null;
+    /** Fired when a moving RUNE collides with the physics body (set by the behaviour). Passes the rune node, its
+     *  horizontal travel sign (+1 right / −1 left, so the eliminate flies the same way) and the impact SPEED
+     *  (physics u/s) so the behaviour can tell a strong hit from a weak one. */
+    onImpact: ((other: Node, dirX: number, speed: number) => void) | null = null;
     /** Called once it is fully gone (any death) — the spawner wires this to recycle it. One-shot per life. */
     onGone: (() => void) | null = null;
 
@@ -248,6 +250,10 @@ export class AkuAku extends Component {
     // eliminate(). When present it DRIVES the ground position (rune impacts move it). Null = free preview.
     private _body: Node | null = null;
     private _physRadius = 0;
+    // Runes currently overlapping the body sensor (kept by begin/end contact). Each frame the Aku-aku takes a
+    // hit from the FASTEST one moving above HIT_MIN_SPEED — so a rune set moving by ANOTHER rune (or one already
+    // touching that then gets knocked) counts, not just a rune that ENTERED the sensor this frame.
+    private readonly _overlap = new Set<Collider2D>();
     private _emergeTween: Tween<Node> | null = null;
     // Emerge hop: while the body breaches, the GROUND position eases down so the Aku LANDS EMERGE_DROP px lower
     // than the hole (a little hop out). No physics body during emerge → lateUpdate doesn't fight the drop.
@@ -393,8 +399,13 @@ export class AkuAku extends Component {
         col.density = opts?.density ?? 2;       // lighter than a rune (~8) → the runes shove it around easily
         col.friction = opts?.friction ?? 0.4;
         col.restitution = opts?.restitution ?? 0.1;
+        // Aku-arena core: the body is a SENSOR → a launched rune PIERCES it (detects the hit, but no collision
+        // response, so the rune keeps its speed/trajectory and can plough through several Aku in a row). The
+        // contact listener below still fires on overlap, so the hit is registered. (Curling core: solid, shoved.)
+        if (GameMode.akuArena) col.sensor = true;
         col.apply();
-        col.on(Contact2DType.BEGIN_CONTACT, this._onContact, this);   // detect rune impacts → onImpact hook
+        col.on(Contact2DType.BEGIN_CONTACT, this._onBeginContact, this);   // track overlapping runes (hit decided per-frame)
+        col.on(Contact2DType.END_CONTACT, this._onEndContact, this);
         this._body = n;
         this._physRadius = r;
     }
@@ -437,25 +448,38 @@ export class AkuAku extends Component {
         return Math.abs(p.x) > W / 2 - m || p.y < m || p.y > D - m;
     }
 
-    /** Box2D BEGIN_CONTACT on the body: report only RUNE impacts via onImpact — and only if the rune is actually
-     *  MOVING (a stone at rest / barely drifting against it does no damage). Just fires the hook; the behaviour
-     *  debounces & reacts in its own update (never mutate physics here). */
-    private _onContact(_self: Collider2D, other: Collider2D): void {
-        if (!this.alive || !other?.node?.isValid) return;
-        if (!other.node.getComponent(Stone)) return;   // walls / launcher / other Aku-aku don't count as hits
-        const rb = other.body;                          // the rune's RigidBody2D (Collider2D.body)
-        let dirX = 0;
-        if (rb) {
+    /** Box2D contact on the body sensor: track which RUNES currently overlap (begin adds, end removes). The hit
+     *  is decided per-frame in _checkRuneHits — so a rune set moving by ANOTHER rune (or one already touching
+     *  that then gets knocked) still counts, not only a rune that ENTERS the sensor this frame. */
+    private _onBeginContact(_self: Collider2D, other: Collider2D): void {
+        if (other?.node?.isValid && other.node.getComponent(Stone)) this._overlap.add(other);   // walls/launcher/other Aku ignored
+    }
+    private _onEndContact(_self: Collider2D, other: Collider2D): void {
+        this._overlap.delete(other);
+    }
+
+    /** Each frame while alive: take a hit from the FASTEST overlapping rune moving above HIT_MIN_SPEED (a stone
+     *  at rest / barely drifting does nothing). Catches the launched rune AND any rune knocked into the Aku-aku
+     *  by another rune — however it started moving, and whether or not it entered the sensor this frame. Fires the
+     *  onImpact hook with the impact speed (strong vs weak is the behaviour's call); never mutates physics here. */
+    private _checkRuneHits(): void {
+        if (!this.alive || this._overlap.size === 0 || !this.onImpact) return;
+        let best = HIT_MIN_SPEED, node: Node | null = null, dirX = 0;
+        for (const col of this._overlap) {
+            if (!col?.isValid || !col.node?.isValid) { this._overlap.delete(col); continue; }   // prune destroyed runes
+            const rb = col.body;                        // the rune's RigidBody2D (Collider2D.body)
+            if (!rb) continue;
             const v = rb.linearVelocity;
-            if (v.x * v.x + v.y * v.y < HIT_MIN_SPEED * HIT_MIN_SPEED) return;   // slow/stopped → no damage
-            dirX = v.x >= 0 ? 1 : -1;                   // the rune's horizontal travel direction
+            const sp = Math.sqrt(v.x * v.x + v.y * v.y);
+            if (sp > best) { best = sp; node = col.node; dirX = v.x >= 0 ? 1 : -1; }
         }
-        this.onImpact?.(other.node, dirX);
+        if (node) this.onImpact?.(node, dirX, best);
     }
 
     private _destroyBody(): void {
         if (this._body?.isValid) this._body.destroy();
         this._body = null;
+        this._overlap.clear();   // drop tracked rune contacts (the sensor is gone)
         if (this._dbg?.isValid) this._dbg.clear();
     }
 
@@ -837,6 +861,7 @@ export class AkuAku extends Component {
 
     update(dt: number): void {
         if (EDITOR) return;   // @executeInEditMode is only for the variant preview — never animate in the editor
+        this._checkRuneHits();   // any overlapping rune moving fast enough → take a hit (incl. runes knocked by others)
         if (this._phase <= Phase.Move) this._tickBlink(dt);          // blink while alive & grounded (not Hit/Eliminated)
         else if (this._phase === Phase.Pray) this._tickPrayEyes(dt);  // prayer: eyes closed, occasional peeks
         switch (this._phase) {

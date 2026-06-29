@@ -231,6 +231,9 @@ export class Koolkan extends Component {
     /** Current energy and whether awake (past Sleeping). */
     get energy(): number { return this._energy; }
 
+    /** Reset the wake-gauge to empty without changing state (e.g. an aku-arena round restart). */
+    resetEnergy(): void { this._energy = 0; console.log('[Koolkan] energy gauge reset to 0'); }
+
     /** Absorb a prayer spirit: +`amount` energy with a PURPLE wash + a little recoil; once it reaches
      *  `wakeEnergy` while still Sleeping, he WAKES (Sleeping → Floating). */
     addEnergy(amount = 1): void {

@@ -66,6 +66,17 @@ export class PrayerSpirit extends Component {
     private readonly _spirits: Spirit[] = [];
     private _warned = false;
 
+    private static readonly _all: PrayerSpirit[] = [];
+    /** Any enabled emitter wired to a valid Koolkan — lets the Aku feed the wake-gauge with NO per-spawner
+     *  wiring (AkuAkuBehavior falls back to this when its own `prayerSpirit` is unassigned). */
+    static get instance(): PrayerSpirit | null {
+        for (let i = PrayerSpirit._all.length - 1; i >= 0; i--) {
+            const p = PrayerSpirit._all[i];
+            if (p?.isValid && p.koolkan?.node?.isValid) return p;
+        }
+        return null;
+    }
+
     onLoad(): void {
         const r = new Node('PrayerSpiritFX');
         r.layer = this.node.layer;
@@ -73,6 +84,9 @@ export class PrayerSpirit extends Component {
         r.setPosition(0, 0, 0);
         this._root = r;
     }
+
+    onEnable(): void { PrayerSpirit._all.push(this); }
+    onDisable(): void { const i = PrayerSpirit._all.indexOf(this); if (i >= 0) PrayerSpirit._all.splice(i, 1); }
 
     /** Launch a purple spirit from `fromWorld` that flies into Koolkan and gives him 1 energy on impact. */
     launch(fromWorld: Readonly<Vec3>): void {

@@ -67,7 +67,7 @@ export class CurlingScorer extends Component {
     }
 
     update(dt: number): void {
-        if (GameMode.stickyPrototype) return;   // sticky-blob prototype: no tee/house scoring (Overpower replaces it)
+        if (!GameMode.curling) return;   // curling scoring (tee/house → RaisingStar) lives ONLY in the curling core
         if (!this.house || !this.discharge) return;
         this.house.collectStonesOnTee(this._onTee);
 

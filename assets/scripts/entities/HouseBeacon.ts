@@ -31,7 +31,7 @@ export class HouseBeacon extends Component {
     private _t = 0;   // pulse phase accumulator
 
     onLoad(): void {
-        if (GameMode.stickyPrototype) return;   // curling off in the sticky prototype → leave the house overlay as authored (off)
+        if (!GameMode.curling) return;   // curling-only → leave the house overlay as authored (off) outside the curling core
         if (!this.lit?.isValid) { console.warn('[HouseBeacon] no `lit` overlay assigned — beacon disabled'); return; }
         this.lit.active = true;                                   // the authored overlay ships inactive
         // Opacity is the channel we animate (allowed on instances; we never touch the authored position/scale).

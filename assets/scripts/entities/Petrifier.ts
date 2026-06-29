@@ -48,7 +48,7 @@ export class Petrifier extends Component {
     }
 
     update(dt: number): void {
-        if (GameMode.stickyPrototype) return;   // sticky-blob prototype: no petrification
+        if (!GameMode.curling) return;   // petrification lives ONLY in the curling core (sticky / aku-arena: none)
         if (!this.house) return;
         const maxSqr = this.restSpeed * this.restSpeed;
         const warnAt = this.petrifyDelay - this.warnLead;

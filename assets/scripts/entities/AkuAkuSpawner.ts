@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Prefab, instantiate, Vec3, CCInteger, CCFloat, NodePool, ParticleSystem2D, UITransform } from 'cc';
+import { _decorator, Component, Node, Prefab, instantiate, Vec3, CCInteger, CCFloat, NodePool, ParticleSystem2D, UITransform, director } from 'cc';
 import { EDITOR } from 'cc/env';
 import { AkuAku } from './AkuAku';
 import { AkuAkuBehavior } from './AkuAkuBehavior';
@@ -10,6 +10,8 @@ import { GameMode } from '../config/GameMode';
 const { ccclass, property, disallowMultiple, menu } = _decorator;
 
 const _w = new Vec3();
+
+const STAGGER_GAP = 0.8;   // min seconds between ANY two spawners releasing an Aku, so Lx/Rx don't pop out together
 
 /**
  * Spawns Aku-aku into the arena over time: every `spawnInterval` seconds it pops one out of THIS node's
@@ -62,9 +64,31 @@ export class AkuAkuSpawner extends Component {
     private _running = false;
     private readonly _live: AkuAku[] = [];
     private readonly _pool = new NodePool();
+    private _dustResolved: ParticleSystem2D | null | undefined = undefined;   // cached DustPuff lookup (auto-resolve)
+    private _waveRemaining = -1;   // Aku still to release this ROUND (-1 = unlimited/continuous; set finite by beginWave)
+
+    private static readonly _all: AkuAkuSpawner[] = [];
+    /** Stop (or resume) every spawner at once — e.g. RoundManager halts spawns on game-over. */
+    static setAllRunning(v: boolean): void { for (const s of AkuAkuSpawner._all) if (s?.isValid) s.setRunning(v); }
+
+    // Cross-spawner stagger: a shared lockout so two spawners never release an Aku in the same beat. Ticked ONCE
+    // per frame (frame-guard) regardless of how many spawners run, so the gap is exact.
+    private static _gate = 0;
+    private static _gateFrame = -1;
+    private static _tickGate(dt: number): void {
+        const f = director.getTotalFrames();
+        if (f === AkuAkuSpawner._gateFrame) return;
+        AkuAkuSpawner._gateFrame = f;
+        if (AkuAkuSpawner._gate > 0) AkuAkuSpawner._gate = Math.max(0, AkuAkuSpawner._gate - dt);
+    }
+
+    onEnable(): void { AkuAkuSpawner._all.push(this); }
+    onDisable(): void { const i = AkuAkuSpawner._all.indexOf(this); if (i >= 0) AkuAkuSpawner._all.splice(i, 1); }
 
     start(): void {
-        this._running = this.autoStart && !GameMode.stickyPrototype;   // sticky prototype: no Aku-aku
+        // Sticky: never. Aku-arena: ALWAYS run the wander loop (the `autoStart` flag is a curling-era setting —
+        // there RoundManager drives the spawners via spawnOnColumn, so AkuSpawnerLx/Rx ship with autoStart=false).
+        this._running = !GameMode.stickyPrototype && (this.autoStart || GameMode.akuArena);
         this._timer = this.spawnInterval;   // first one pops out after a full interval
     }
 
@@ -74,32 +98,64 @@ export class AkuAkuSpawner extends Component {
     /** Aku-aku currently alive (prunes any that were destroyed). */
     get liveCount(): number { this._prune(); return this._live.length; }
 
+    /** Start a fresh round wave: release up to `maxCount` Aku, then stop topping up until the next beginWave. */
+    beginWave(): void {
+        this._waveRemaining = Math.max(1, Math.floor(this.maxCount));
+        this._timer = this.spawnInterval;
+        this._running = true;
+    }
+
+    /** True once this round's whole wave has been released AND every released Aku has been eliminated. */
+    get waveCleared(): boolean { return this._waveRemaining === 0 && this.liveCount === 0; }
+
+    /** Begin a fresh wave on every active spawner (aku-arena round start / restart). */
+    static beginAllWaves(): void { for (const s of AkuAkuSpawner._all) if (s?.isValid) s.beginWave(); }
+
+    /** True when there is ≥1 active spawner and ALL of them have cleared their wave (every Aku eliminated). */
+    static allWavesCleared(): boolean {
+        let any = false;
+        for (const s of AkuAkuSpawner._all) {
+            if (!s?.isValid || !s._running) continue;
+            any = true;
+            if (!s.waveCleared) return false;
+        }
+        return any;
+    }
+
     update(dt: number): void {
         if (EDITOR || !this._running) return;
+        AkuAkuSpawner._tickGate(dt);
         this._prune();
+        if (this._waveRemaining === 0) return;              // this round's wave is fully released → wait for the restart
         if (this._live.length >= this.maxCount) return;
         if (physicsDepth() <= 0 || !this.arena?.isValid || !this.akuPrefab) return;   // wait for the perspective to be configured
         this._timer += dt;
         if (this._timer < this.spawnInterval) return;
+        if (AkuAkuSpawner._gate > 0) return;   // another spawner just released one → hold (keep _timer; retry next frame)
         this._timer = 0;
-        this._spawnOne();
+        if (this._spawnOne()) {                 // only burn the stagger gate + wave budget on a REAL spawn
+            AkuAkuSpawner._gate = STAGGER_GAP;  // brief cross-spawner lockout so the next Aku comes out a beat later
+            if (this._waveRemaining > 0) this._waveRemaining--;
+        }
     }
 
-    private _spawnOne(): void {
+    private _spawnOne(): boolean {
         const pos = this._spawnGroundPos();
-        if (!pos) return;
+        if (!pos) return false;
         const node = this._obtain();
-        if (!node) return;
+        if (!node) return false;
         node.setParent(this.stoneLayer ?? this.arena!);   // the VIEW lives in the stone layer (it follows the body)
         const aku = node.getComponent(AkuAku);
-        if (!aku) { node.destroy(); return; }
+        if (!aku) { node.destroy(); return false; }
         let beh = node.getComponent(AkuAkuBehavior);
         if (!beh) beh = node.addComponent(AkuAkuBehavior);   // brain (prefer authoring it on the prefab; added here as a fallback)
         aku.background = this.background;                    // where it drops during the eliminate descent
+        beh.prayerSpirit = this.prayerSpirit;                // its prayer feeds Koolkan's wake-gauge (falls back to PrayerSpirit.instance if null)
         beh.onGone = () => this.recycle(aku);                // off the cliff → free the slot + pool the node
         this._playDust();
         beh.spawn(this.arena!, pos.x, pos.y);                // place + body + emerge + run the behaviour loop
         this._live.push(aku);
+        return true;
     }
 
     /** Spawn an Aku-aku that climbs onto `column` and prays (GDD v0.4): pops from THIS hole, holds, hops to the
@@ -162,14 +218,21 @@ export class AkuAkuSpawner extends Component {
         }
     }
 
-    /** Puff the dust VFX at the ground spot (projected to screen, depth-scaled), then auto-destroy it. */
-    /** Puff the authored dust ParticleSystem2D (a child of this spawner, sitting on the hole). No-op if none.
-     *  Activates the node first so the system has initialised (resetSystem crashes on an inactive/uninitialised PS). */
+    /** Puff the dust as an Aku pops out of the hole: the assigned `dust`, or — if none — a ParticleSystem2D found
+     *  in the spawner's own children (the prefab's DustPuff). Activates the node first so the system has
+     *  initialised (resetSystem crashes on an inactive/uninitialised PS). */
     private _playDust(): void {
-        const ps = this.dust;
+        let ps = this.dust;
+        if (!ps?.isValid) ps = this._autoDust();
         if (!ps?.isValid) return;
         if (!ps.node.active) ps.node.active = true;
         ps.resetSystem();
+    }
+
+    /** Fall back to a ParticleSystem2D in the spawner's children (the prefab's DustPuff) when `dust` is unassigned. */
+    private _autoDust(): ParticleSystem2D | null {
+        if (this._dustResolved === undefined) this._dustResolved = this.getComponentInChildren(ParticleSystem2D);
+        return this._dustResolved;
     }
 
     onDestroy(): void {

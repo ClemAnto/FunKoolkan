@@ -5955,7 +5955,7 @@
     "arenaBounds": {
       "__id__": 213
     },
-    "launchSpeed": 50,
+    "launchSpeed": 80,
     "stoneRadius": 31.6,
     "stoneViewScale": 0.575,
     "minDrag": 50,
@@ -5963,15 +5963,15 @@
     "bombDragFactor": 1.3,
     "bowFollowFactor": 0.7,
     "trajectoryLength": 400,
-    "stoneRestitution": 0.04,
+    "stoneRestitution": 0.9,
     "stoneFriction": 0.4,
     "stoneDamping": 0.9,
     "debugStones": false,
     "launcherRadius": 28,
     "showLauncherBody": false,
     "loadedScaleFactor": 0.85,
-    "loadPopDuration": 0.22,
-    "loadPopDelay": 1,
+    "loadPopDuration": 0.16,
+    "loadPopDelay": 0.4,
     "_id": "ST00StoneLauncher000"
   },
   {
@@ -5993,7 +5993,7 @@
     "cornerRadius": 72,
     "cornerSegments": 3,
     "wallThickness": 18,
-    "restitution": 0.4,
+    "restitution": 0.8,
     "friction": 0.1,
     "showDebugOutline": false,
     "_id": "ST00ArenaBounds00000"
