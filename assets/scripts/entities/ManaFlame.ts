@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Prefab, instantiate, Vec3, resources, Color, Graphics, Sprite, ParticleSystem2D, Animation, RigidBody2D, UIOpacity, gfx, tween, Tween } from 'cc';
+import { _decorator, Component, Node, Prefab, instantiate, Vec3, resources, Color, Graphics, Sprite, ParticleSystem2D, Animation, RigidBody2D, UIOpacity, UITransform, gfx, tween, Tween } from 'cc';
 import { EDITOR } from 'cc/env';
 import { projectX, projectY, sizeXFactor, sizeYFactor, physicsDepth, physicsWidth } from '../config/Perspective';
 import { GameMode } from '../config/GameMode';
@@ -13,8 +13,8 @@ const { ccclass, property, disallowMultiple, menu } = _decorator;
 const SPAWN_EVERY   = 5;     // shots between flames (one flame at a time) — the scarcity knob
 const LIFE_SHOTS    = 3;     // a flame vanishes if it survives this many shots unused (GDD: "in 3 lanci")
 const MOVE_THRESHOLD = 40;   // ground u/s above which a rune counts as "in flight" — a shot ENDS when the arena drops below this (all still)
-const FLAME_GROUND_RADIUS = 25;  // catch area radius in GROUND px — a true floor circle (projects to a perspective ellipse, like the tee). MAIN KNOB.
-const GROUND_TILT   = 0.5;   // perspective Y-foreshorten of a ground disc (ry = rx·this) — matches the Stone/tee debug
+const AREA_FACTOR  = 1.0;    // contact-area radius as a fraction of the flame SPRITE's footprint (1 = full sprite). MAIN KNOB.
+const AREA_FALLBACK = 25;    // ground-radius fallback until the flame view's sprite has been measured
 const FLAME_VIEW_SCALE = 0.9; // upright sprite scale (× arena fit × depth) — tune to the ManaFlame prefab art
 const POP_IN        = 0.22;  // s: scale-up "pop" when the flame appears
 const POP_OUT       = 0.16;  // s: scale-down "pop" when the flame leaves
@@ -49,9 +49,10 @@ export class ManaFlame extends Component {
     private _view: Node | null = null;
     private _gx = 0;
     private _gy = 0;
-    private _shots = 0;            // launches elapsed since this flame appeared
-    private _sinceLast = 0;        // shots since the last flame ended (drives the next spawn)
-    private _wasMoving = false;    // was the arena moving last frame? (a shot ENDS on the moving→still transition)
+    private _shots = 0;            // SHOTS (launches) elapsed since this flame appeared — its unused lifetime
+    private _sinceLast = 0;        // SHOTS (launches) since the last flame ended — drives the next spawn (every SPAWN_EVERY)
+    private _lastLaunch = 0;       // StoneLauncher.launchCount seen last frame (to count new shots)
+    private _wasMoving = false;    // was the arena moving last frame? (the spawn/despawn fires on the moving→still transition)
     private _initDone = false;
     private _logT = 0;             // debug log throttle
     private _areaHit = false;      // debug: a stone is currently overlapping the area → draw the outline thicker
@@ -63,6 +64,14 @@ export class ManaFlame extends Component {
 
     // Placeholder flame prefab, loaded once from resources/ (undefined = not requested, null = loading/failed).
     private static _ph: Prefab | null | undefined = undefined;
+    // Flame sprite half-width (px), measured from the first created view (same prefab → static cache).
+    private static _spriteHalf = 0;
+
+    /** Contact-area radius in GROUND px, DERIVED FROM THE FLAME SPRITE: half-width × FLAME_VIEW_SCALE × AREA_FACTOR
+     *  (so it scales with the sprite, like the tee's area). Falls back to a constant until the sprite is measured. */
+    private _areaRadius(): number {
+        return ManaFlame._spriteHalf > 0 ? ManaFlame._spriteHalf * FLAME_VIEW_SCALE * AREA_FACTOR : AREA_FALLBACK;
+    }
 
     private _launcher(): StoneLauncher | null { return StoneLauncher.instance; }
     private _arena(): Node | null { return this._launcher()?.arena ?? null; }
@@ -72,10 +81,16 @@ export class ManaFlame extends Component {
         if (EDITOR || !GameMode.stickyPrototype) return;
         if (physicsDepth() <= 0 || !this._launcher()?.arena?.isValid) return;   // wait for perspective + launcher
 
-        if (!this._initDone) { this._openingState(); this._initDone = true; this._wasMoving = false; }
+        if (!this._initDone) { this._openingState(); this._initDone = true; this._wasMoving = false; this._lastLaunch = StoneLauncher.launchCount; }
 
-        // a "shot" ENDS when the arena settles: a launched rune was in flight last frame and now everything is
-        // still. That moving→still transition (not the launch instant) is what advances the flame cadence.
+        // Count SHOTS (real launches): every SPAWN_EVERY shots a flame is due; LIFE_SHOTS = its unused life.
+        const lc = StoneLauncher.launchCount;
+        if (lc > this._lastLaunch) {
+            const n = lc - this._lastLaunch; this._lastLaunch = lc;
+            if (this._active) this._shots += n; else this._sinceLast += n;
+        }
+        // The spawn/despawn ACTION fires at the shot's END (arena moving→still), so the flame appears/leaves when
+        // things have settled — not mid-flight.
         const moving = this._anyRuneMoving();
         if (this._wasMoving && !moving) this._registerShotEnd();
         this._wasMoving = moving;
@@ -109,13 +124,13 @@ export class ManaFlame extends Component {
         this._spawnAt(0, D * FLAME_CENTER_Y);   // opening flame at the centre (threads up into the centre cluster)
     }
 
-    /** A shot has ended (the arena settled): age the active flame (despawn after its lifetime) or count toward
-     *  the next spawn. */
+    /** A shot has ended (the arena settled): if a flame is up and has gone unused for LIFE_SHOTS shots, it leaves
+     *  (white flash); otherwise, once SPAWN_EVERY shots have passed since the last flame, a new one appears. The
+     *  shot COUNTING happens per-launch in update(); this only applies the thresholds at the settle moment. */
     private _registerShotEnd(): void {
         if (this._active) {
-            if (this._shots >= LIFE_SHOTS) this._despawn(true);   // unused for LIFE_SHOTS → vanish with a white flash
-            else this._shots++;
-        } else if (++this._sinceLast >= SPAWN_EVERY) {
+            if (this._shots >= LIFE_SHOTS) this._despawn(true);   // unused for LIFE_SHOTS shots → vanish with a white flash
+        } else if (this._sinceLast >= SPAWN_EVERY) {
             this._spawnRandom();
         }
     }
@@ -153,7 +168,7 @@ export class ManaFlame extends Component {
         for (let i = 0; i < all.length; i++) {
             const s = all[i];
             if (!s.node?.isValid) continue;
-            const p = s.node.position, rr = FLAME_GROUND_RADIUS + s.radius;
+            const p = s.node.position, rr = this._areaRadius() + s.radius;
             const dx = p.x - gx, dy = p.y - gy;
             if (dx * dx + dy * dy < rr * rr) return true;
         }
@@ -169,7 +184,7 @@ export class ManaFlame extends Component {
         this._pop.v = 0;
         this._popTween = tween(this._pop).to(POP_IN, { v: 1 }, { easing: 'backOut' }).start();   // pop IN
         this._projectFlame();
-        console.log(`[ManaFlame] flame spawned at ground (${gx.toFixed(0)}, ${gy.toFixed(0)}), reach ${FLAME_GROUND_RADIUS}`);
+        console.log(`[ManaFlame] flame spawned at ground (${gx.toFixed(0)}, ${gy.toFixed(0)}), reach ${this._areaRadius().toFixed(0)}`);
     }
 
     private _despawn(withFlash = false): void {
@@ -197,7 +212,7 @@ export class ManaFlame extends Component {
         this._logT += dt;
         // flame zone as an on-screen ellipse (the projected ground circle) — same space/test as the tee's zone
         const fvx = projectX(this._gx, this._gy), fvy = projectY(this._gy);
-        const frx = FLAME_GROUND_RADIUS * sizeXFactor(this._gy), fry = frx * GROUND_TILT;
+        const frx = this._areaRadius() * sizeXFactor(this._gy), fry = this._areaRadius() * sizeYFactor(this._gy);
         const all = Stone.all;
         let nearest = Infinity, hit = false;
         for (let i = 0; i < all.length; i++) {
@@ -231,7 +246,7 @@ export class ManaFlame extends Component {
     private _fillExempt(): void {
         this._exempt.clear();
         const fvx = projectX(this._gx, this._gy), fvy = projectY(this._gy);
-        const frx = FLAME_GROUND_RADIUS * sizeXFactor(this._gy), fry = frx * GROUND_TILT;
+        const frx = this._areaRadius() * sizeXFactor(this._gy), fry = this._areaRadius() * sizeYFactor(this._gy);
         const all = Stone.all;
         for (let i = 0; i < all.length; i++) {
             const s = all[i];
@@ -253,7 +268,7 @@ export class ManaFlame extends Component {
     }
 
     /** Debug overlay (toggled by the global DEBUG): the flame's CONTACT AREA — a ground circle of
-     *  FLAME_GROUND_RADIUS drawn as a perspective ellipse on the floor (ry = rx·GROUND_TILT), exactly like the
+     *  the sprite-derived area radius drawn as a perspective ellipse on the floor (model-aware ground tilt), like the
      *  tee. Drawn on its own Graphics under the arena's PARENT, mirroring the arena transform (the Pole pattern),
      *  so it is independent of the upright flame sprite. */
     private _drawDebug(): void {
@@ -268,7 +283,7 @@ export class ManaFlame extends Component {
             n.setParent(world);
             this._dbg = n.addComponent(Graphics);
             this._dbg.lineWidth = 3;
-            this._dbg.strokeColor = new Color(120, 230, 255, 235);
+            this._dbg.strokeColor = new Color(255, 0, 255, 235);   // magenta
         }
         const dn = this._dbg.node;
         dn.setSiblingIndex(world.children.length - 1);   // above the stone-layer sprites
@@ -276,7 +291,7 @@ export class ManaFlame extends Component {
         dn.setScale(arena.scale);
         const g = this._dbg;
         const cx = projectX(this._gx, this._gy), cy = projectY(this._gy);
-        const rx = FLAME_GROUND_RADIUS * sizeXFactor(this._gy), ry = rx * GROUND_TILT;   // flat ground disc (the contact area)
+        const rx = this._areaRadius() * sizeXFactor(this._gy), ry = this._areaRadius() * sizeYFactor(this._gy);   // flat ground disc (the contact area, model-aware)
         g.clear();
         g.lineWidth = this._areaHit ? 7 : 3;   // thickens while a stone overlaps the area (like the tee)
         g.ellipse(cx, cy, rx, ry);
@@ -302,8 +317,12 @@ export class ManaFlame extends Component {
         // Auto-play any hand-authored Animation clip inside the prefab (so it runs without relying on playOnLoad).
         const anims = n.getComponentsInChildren(Animation);
         for (let i = 0; i < anims.length; i++) anims[i].play();
-        const sprites = n.getComponentsInChildren(Sprite).length;
-        console.log(`[ManaFlame] view created (src=${this.flamePrefab ? 'flamePrefab' : 'resources/prefabs/ManaFlame'}, sprites=${sprites}, particles=${particles.length}, anims=${anims.length}, children=${n.children.length})`);
+        const sprites = n.getComponentsInChildren(Sprite);
+        if (ManaFlame._spriteHalf <= 0 && sprites.length) {   // measure the flame sprite once → drives the contact-area size
+            const ut = sprites[0].getComponent(UITransform);
+            if (ut && ut.contentSize.width > 0) ManaFlame._spriteHalf = ut.contentSize.width * 0.5;
+        }
+        console.log(`[ManaFlame] view created (src=${this.flamePrefab ? 'flamePrefab' : 'resources/prefabs/ManaFlame'}, sprites=${sprites.length}, particles=${particles.length}, anims=${anims.length}, spriteHalf=${ManaFlame._spriteHalf.toFixed(0)})`);
     }
 
     /** Position the UPRIGHT flame sprite via the 1-point projection and shrink it uniformly with depth (NOT

@@ -3,13 +3,12 @@ import { Stone } from './Stone';
 import { Rune } from './Rune';
 import { ArenaBounds } from './ArenaBounds';
 import { RUNES } from '../config/RuneTypes';
-import { projectX, projectY, sizeXFactor, sizeYFactor, unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
+import { projectX, projectY, sizeXFactor, vStackFactor, floorTilt, unprojectX, unprojectY, physicsDepth } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
 
 const { ccclass, property } = _decorator;
 
 const MAX_AIM_ANGLE = 67.5 * Math.PI / 180;   // aim cone from straight-up (±75% toward horizontal)
-const GROUND_TILT = 0.5;   // perspective Y-foreshorten: a ground circle reads as a flat ellipse, ry = rx·this (see Perspective)
 const SIM_DT = 1 / 60;
 const SIM_MAX_STEPS = 6000;
 const SIM_MIN_SPEED = 0.5;   // simulate further into the slow tail → longer, more visible trajectory
@@ -323,7 +322,7 @@ export class StoneLauncher extends Component {
             jy = (Math.random() - 0.5) * 2 * BOMB_SHAKE_PX;
         }
         r.node.setPosition(lp.x + jx, lp.y + this._dropT.y + jy, 0);   // _dropT.y = transient launch-departure drop
-        r.node.setScale(base * sizeXFactor(gy) * pop, base * sizeYFactor(gy) * pop, 1);
+        r.node.setScale(base * sizeXFactor(gy) * pop, base * vStackFactor(gy, this.stoneRadius) * pop, 1);   // matches the launched stone's exact-tiling Y scale
     }
 
     /** Loaded scale multiplier for the current phase: 1 settled, linear 1→0 pop-out, eased 0→1 pop-in. */
@@ -605,7 +604,7 @@ export class StoneLauncher extends Component {
     }
 
     /** (Re)draw one aim-cone arc of the given radius/colour on its own child Graphics; creates it on first use.
-     *  Drawn as a FLAT ellipse (ry = rx·GROUND_TILT, sampled) so it lies on the foreshortened ground like the
+     *  Drawn as a FLAT ellipse (ry = rx·local ground tilt, sampled) so it lies on the foreshortened ground like the
      *  launcher — and so it coincides with the bomb/power threshold, which uses the same squashed metric (_dragLen). */
     private _drawArc(g: Graphics | null, name: string, radius: number, color: Color): Graphics {
         if (!g?.isValid) {
@@ -617,7 +616,7 @@ export class StoneLauncher extends Component {
             g.lineWidth = 3;
         }
         const lp = this.node.position;
-        const rx = radius, ry = radius * GROUND_TILT;
+        const rx = radius, ry = radius * this._launcherTilt();   // flat ground ellipse at the launcher's local tilt (model-aware)
         const a0 = -Math.PI / 2 - MAX_AIM_ANGLE, a1 = -Math.PI / 2 + MAX_AIM_ANGLE;
         const STEPS = 36;
         g.clear();
@@ -631,10 +630,15 @@ export class StoneLauncher extends Component {
         return g;
     }
 
-    /** Pull magnitude in the squashed-ground metric. The ground is Y-foreshortened on screen (a launcher
-     *  circle reads as a flat ellipse, ry = rx·GROUND_TILT), so a vertical drag covers less screen distance
-     *  per unit of ground pull — un-squash Y (÷GROUND_TILT) so power/threshold match the flat drag arcs. */
-    private _dragLen(pull: Vec2): number { return Math.hypot(pull.x, pull.y / GROUND_TILT); }
+    /** Local ground tilt at the launcher (on-screen vertical/horizontal aspect of a floor disc there). Model-aware:
+     *  Perspective ≈ s near the bottom, Tilt = k (≈0.5), Flat = 1. Used to draw the floor ellipses and to un-squash
+     *  the vertical drag so power matches in both axes. */
+    private _launcherTilt(): number { const t = floorTilt(unprojectY(this.node.position.y)); return t > 0.01 ? t : 1; }
+
+    /** Pull magnitude in the squashed-ground metric. The ground is Y-foreshortened on screen (a launcher circle
+     *  reads as a flat ellipse), so a vertical drag covers less screen distance per unit of ground pull —
+     *  un-squash Y (÷tilt) so power/threshold match the flat drag arcs. */
+    private _dragLen(pull: Vec2): number { return Math.hypot(pull.x, pull.y / this._launcherTilt()); }
 
     /** Vector from the launcher to the touch, in arena-local (visual) space. */
     private _pull(uiX: number, uiY: number): Vec2 {
@@ -702,7 +706,7 @@ export class StoneLauncher extends Component {
         }
         const g = this._spawnPhysics();
         const cx = projectX(g.x, g.y), cy = projectY(g.y);
-        const rx = this.launcherRadius * sizeXFactor(g.y), ry = rx * GROUND_TILT;   // flat ground disc (footprint)
+        const rx = this.launcherRadius * sizeXFactor(g.y), ry = rx * floorTilt(g.y);   // flat ground disc (footprint, model-aware)
         const gr = this._bodyDbg;
         gr.clear();
         gr.ellipse(cx, cy, rx, ry);
@@ -834,8 +838,8 @@ export class StoneLauncher extends Component {
                     col.a = Math.round(240 * (1 - (cum + dist) / maxLen) * this._trajAlpha);   // length fade × global fade (eased in/out on invalid↔valid)
                     g.fillColor = col;
                     const py = fpy + (tpy - fpy) * t;   // depth at this dot
-                    const rx = dotR * sizeXFactor(py);  // shrink with depth; 0.5 = ground tilt → flat disc
-                    g.ellipse(fvx + ux * dist, fvy + uy * dist, rx, rx * GROUND_TILT);
+                    const rx = dotR * sizeXFactor(py);  // shrink with depth
+                    g.ellipse(fvx + ux * dist, fvy + uy * dist, rx, rx * floorTilt(py));   // flat ground disc (model-aware tilt)
                     g.fill();
                     dist += step;
                 }

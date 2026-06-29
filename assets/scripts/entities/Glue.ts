@@ -2,7 +2,7 @@ import { _decorator, Component, Node, Vec2, RigidBody2D, CCFloat, Graphics, Colo
 import { Pole } from './Pole';
 import { Stone } from './Stone';
 import { StoneExplosion } from './StoneExplosion';
-import { projectX, projectY, sizeXFactor } from '../config/Perspective';
+import { projectX, projectY, sizeXFactor, floorTilt } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
 import { GameMode } from '../config/GameMode';
 
@@ -16,10 +16,14 @@ const SCOSSA_GAP = 3;         // surface-surface ground px at/under which two st
 // A rune is drawn toward any near, not-yet-touching rune so the whole blob huddles itself tight (edges meet);
 // the instant they touch the magnet stops and a bond forms. Tunable feel.
 const STICKY_MAGNET_REACH = 1.5;   // magnet reaches this × the rune's radius (edge-to-edge) toward a neighbour
-const STICKY_MAGNET_FORCE = 150;   // peak pull (when nearly touching), easing to 0 at the reach edge; same force
-                                   // scale as a bond spring (cohesion×distance ≈ hundreds). 0 = magnet off. MAIN KNOB.
-const STICKY_BOND_MIN = 0.9;       // bond rest length = this × (r+r): <1 pulls the pair slightly TIGHTER than
-                                   // collider-touching (lets the solver close the visual gap from the anisotropic perspective)
+const STICKY_MAGNET_FORCE = 0;     // peak pull (when nearly touching), easing to 0 at the reach edge; 0 = magnet OFF
+                                   // (disabled for now to test the gameplay without it). Bond does the sticking on contact.
+const STICKY_BOND_MIN = 1.0;       // bond rest length = this × (r+r). =1 → rest AT the collider-touch distance (2r):
+                                   // the spring doesn't fight the footprint collider, so it contracts to 2r and settles (no jitter).
+                                   // <1 would target INSIDE the collider → spring-vs-collider vibration (needs rune-rune collision off).
+const STICKY_COHESION = 400;       // bond spring stiffness (sticky path): MUCH stiffer than the parked default — the
+                                   // runes are heavy (density 8), so a weak spring barely contracts. Pulls the joint to rest promptly.
+const STICKY_BONDED_DAMPING = 8;   // linear damping while bonded (sticky path): ~critical with STICKY_COHESION → snaps in without jitter/overshoot
 
 /** One elastic bond: an anchor + the stone's ORIGINAL offset from it (the rest position) + the break length. */
 interface Bond { anchor: Glue; ox: number; oy: number; maxLen: number; }
@@ -141,11 +145,11 @@ export class Glue extends Component {
             if (!b.anchor.isValid || !b.anchor.isAnchor) { this._bonds.splice(i, 1); continue; }
             const ax = b.anchor._gx(), ay = b.anchor._gy();
             if (Math.hypot(ax - this._gx(), ay - this._gy()) > b.maxLen) { this._bonds.splice(i, 1); continue; }   // snapped
-            fx += this.cohesion * (ax + b.ox - this._gx());
-            fy += this.cohesion * (ay + b.oy - this._gy());
+            fx += STICKY_COHESION * (ax + b.ox - this._gx());
+            fy += STICKY_COHESION * (ay + b.oy - this._gy());
         }
 
-        rb.linearDamping = this._bonds.length > 0 ? this._bondedDamping() : this._freeDamping;   // stiff while stuck, free in flight
+        rb.linearDamping = this._bonds.length > 0 ? STICKY_BONDED_DAMPING : this._freeDamping;   // firm while stuck, free in flight
         if (fx !== 0 || fy !== 0) rb.applyForceToCenter(_force.set(fx, fy), true);
         // isAnchor stays true (set at spawn) → this rune is always a sticky target, even with zero bonds
     }
@@ -316,7 +320,7 @@ export class Glue extends Component {
         if (this.isAnchor) {
             const rx = (this.radius + CONTACT_GAP) * sizeXFactor(this._gy());
             g.strokeColor = new Color(255, 210, 90, 150);
-            g.ellipse(cx, cy, rx, rx * 0.5); g.stroke();
+            g.ellipse(cx, cy, rx, rx * floorTilt(this._gy())); g.stroke();
         }
         for (const b of this._bonds) {
             const px = projectX(b.anchor._gx(), b.anchor._gy()), py = projectY(b.anchor._gy());
@@ -324,7 +328,7 @@ export class Glue extends Component {
             g.moveTo(px, py); g.lineTo(cx, cy); g.stroke();
             const brk = b.maxLen * sizeXFactor(b.anchor._gy());
             g.strokeColor = new Color(255, 90, 90, 90);
-            g.ellipse(px, py, brk, brk * 0.5); g.stroke();
+            g.ellipse(px, py, brk, brk * floorTilt(b.anchor._gy())); g.stroke();
         }
         if (this.isAnchor) { g.fillColor = new Color(120, 230, 255, 235); g.circle(cx, cy, 5); g.fill(); }
     }

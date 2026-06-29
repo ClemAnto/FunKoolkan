@@ -1,9 +1,10 @@
 import { _decorator, Component, Node, Vec2, Vec3, Vec4, RigidBody2D, ERigidBody2DType, CircleCollider2D, Prefab, instantiate, Graphics, Color, Sprite, Material, ParticleSystem2D, resources, tween, Tween } from 'cc';
-import { projectX, projectY, sizeXFactor, sizeYFactor } from '../config/Perspective';
+import { projectX, projectYCenter, sizeXFactor, vStackFactor } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
 import { Rune } from './Rune';
 import { Glue } from './Glue';
 import { Bomb } from './Bomb';
+import { RUNES } from '../config/RuneTypes';
 
 const { ccclass } = _decorator;
 const _v = new Vec3();
@@ -14,15 +15,16 @@ const PETRIFY_DARKEN = 0.3;    // …and darken it slightly (0..1) → a stony g
 const STONE_PULSE_FREQ = 8;    // rad/s of the pre-petrify warning throb (the SAME stone fx, oscillating)
 const STONE_PULSE_PEAK = 0.9;  // warning peaks at this fraction of the full petrify look (just shy of fully set)
 const STAR_FLASH = new Color(255, 255, 255, 255);   // white wash that accompanies the pop into a star
+const DEBUG_FALLBACK = new Color(255, 90, 90, 235);   // stone debug outline colour when the rune has no type
 
 /**
  * Links a moving Box2D body to its visual rune (a prefab instance) in another layer.
  *
  * The body lives in the arena's flat GROUND space and ROTATES (warrior physics). The view is
  * a separate node (NOT a child of the body, so it never inherits the body's rotation): each
- * frame this maps the body's POSITION via the 1-point projection (projectX — X converges —
- * and projectY — non-linear Y), matches the arena's uniform fit-scale, and shrinks the view
- * with depth via sizeXFactor (X) and sizeYFactor (Y) so far runes are genuinely smaller.
+ * frame this maps the body's POSITION via the projection (projectX + projectYCenter) and scales
+ * the view with depth via sizeXFactor (X) and vStackFactor (Y) — the radius-aware vertical metric
+ * that makes glued neighbours TILE and touch in both axes, under either projection model.
  */
 @ccclass('Stone')
 export class Stone extends Component {
@@ -89,15 +91,16 @@ export class Stone extends Component {
     lateUpdate(): void {
         const view = this.viewNode, arena = this.arena;
         if (!view?.isValid || !arena?.isValid) return;
-        const p = this.node.position;                  // arena-local ground point (body is a direct child of arena)
-        _v.set(projectX(p.x, p.y), projectY(p.y), p.z); // 1-point perspective: X converges, Y non-linear
+        const p = this.node.position, r = this.radius;   // arena-local ground point (body is a direct child of arena)
+        // Disc placement that tiles EXACTLY (both projection models): centre = midpoint of the projected
+        // vertical extent (projectYCenter), height = projection of the ground diameter (vStackFactor). X
+        // uses the point projection + sizeX. So glued neighbours touch in BOTH axes at every depth.
+        _v.set(projectX(p.x, p.y), projectYCenter(p.y, r), p.z);
         Vec3.transformMat4(_v, _v, arena.worldMatrix);  // arena-local → world
         _v.x += this.viewOffset.x; _v.y += this.viewOffset.y;   // non-physics nudge (recoil animation)
         view.setWorldPosition(_v);
-        // Shrink with depth in BOTH axes (sizeX = s, sizeY = s·vy), so a far rune is genuinely
-        // smaller, the silhouette tracking the projected ground circle.
         const ws = arena.worldScale, s = this.viewScale, rs = this._spring.s;
-        view.setWorldScale(ws.x * s * sizeXFactor(p.y) * rs, ws.y * s * sizeYFactor(p.y) * rs, 1);
+        view.setWorldScale(ws.x * s * sizeXFactor(p.y) * rs, ws.y * s * vStackFactor(p.y, r) * rs, 1);
         // Mirror the physics body's spin onto the designated inner node (base stays upright).
         if (this.rotationNode?.isValid) this.rotationNode.angle = this._zAngleDeg();
         if (Stone.debugDraw || DebugDraw.enabled) this._drawDebug(p);
@@ -357,12 +360,13 @@ export class Stone extends Component {
             n.setPosition(0, 0, 0);
             this._dbg = n.addComponent(Graphics);
             this._dbg.lineWidth = 3;
-            this._dbg.strokeColor = new Color(255, 90, 90, 235);
         }
         const g = this._dbg, r = this.radius;
-        const cx = projectX(p.x, p.y), cy = projectY(p.y);
-        const rx = r * sizeXFactor(p.y), ry = rx * 0.5;   // 0.5 = ground tilt → flat disc on the floor
+        const cx = projectX(p.x, p.y), cy = projectYCenter(p.y, r);   // match the rune view's exact-tiling placement
+        const rx = r * sizeXFactor(p.y), ry = r * vStackFactor(p.y, r);   // ground-tilt ellipse (model-aware)
         const th = this._zAngleDeg() * Math.PI / 180;     // full ±180 (node.angle would fold to ±90 → fake wobble)
+        const type = this.getComponent(Glue)?.gemType ?? -1;   // draw in the rune's TYPE colour (fallback red)
+        g.strokeColor = (type >= 0 && RUNES[type]) ? RUNES[type].color : DEBUG_FALLBACK;
         g.clear();
         g.lineWidth = this.debugInHouse ? 7 : 3;           // thicker while touching the HOUSE
         g.ellipse(cx, cy, rx, ry);

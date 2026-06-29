@@ -1,10 +1,9 @@
 import { _decorator, Component, Node, Vec2, Vec3, Vec4, UIOpacity, Sprite, Material, Color, CCInteger, tween, Tween, Enum, RigidBody2D, ERigidBody2DType, CircleCollider2D, Graphics, UITransform, Contact2DType, Collider2D, Prefab, instantiate, ParticleSystem2D, resources, view } from 'cc';
 import { EDITOR } from 'cc/env';
-import { physicsDepth, physicsWidth, projectX, projectY, sizeXFactor, unprojectY } from '../config/Perspective';
+import { physicsDepth, physicsWidth, projectX, projectY, sizeXFactor, floorTilt, unprojectY } from '../config/Perspective';
 import { DebugDraw } from '../config/DebugDraw';
 import { Stone } from './Stone';
 
-const GROUND_TILT = 0.5;   // perspective Y-foreshorten: a ground circle reads as a flat ellipse (ry = rx·this)
 const FOOTPRINT_SCALE = 0.8;   // physics body radius as a fraction of the sprite half-width (a touch smaller than the art)
 const MOVE_DUTY = 0.72;    // average per-hop travel weight (arc-weighted advance) → used to size a move to N hops
 const POSE_BLEND = 0.15;   // s to ease the inner body from the captured pose to the new state's target (anti-snap)
@@ -926,7 +925,7 @@ export class AkuAku extends Component {
             this._dbg.strokeColor = new Color(255, 170, 60, 235);
         }
         const cx = projectX(this._gx, this._gy), cy = projectY(this._gy);
-        const rx = this._physRadius * sizeXFactor(this._gy), ry = rx * GROUND_TILT;   // flat ground disc
+        const rx = this._physRadius * sizeXFactor(this._gy), ry = rx * floorTilt(this._gy);   // flat ground disc (model-aware tilt)
         const g = this._dbg;
         g.clear();
         g.ellipse(cx, cy, rx, ry);
